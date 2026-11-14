@@ -1,263 +1,434 @@
 import json
 import os
-from pathlib import Path
+import time
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 from dotenv import load_dotenv
 from google import genai
-from google.genai import types
 
-# 1. Load environment variables (.env locally, st.secrets on Streamlit Cloud)
-load_dotenv()
-
+# --- PAGE CONFIG ---
 st.set_page_config(
-    page_title="TAARA | Flame in Freefall — Microgravity Fire Safety SI",
+    page_title="TAARA | Flame in Freefall — PSI Microgravity Fire Safety",
     page_icon="🔥",
     layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-def get_gemini_client():
-    api_key = os.getenv("GEMINI_API_KEY")
+# --- LOAD ENVIRONMENT & GEMINI CLIENT ---
+load_dotenv()
+API_KEY = os.getenv("GEMINI_API_KEY")
+
+@st.cache_resource
+def get_gemini_client(api_key: str):
     if not api_key:
-        try:
-            api_key = st.secrets.get("GEMINI_API_KEY")
-        except Exception:
-            api_key = None
-    return genai.Client(api_key=api_key) if api_key else None
+        return None
+    return genai.Client(api_key=api_key)
 
-client = get_gemini_client()
+client = get_gemini_client(API_KEY)
 
-SYSTEM_PROMPT = """
-You are an aerospace fire-safety research assistant built by Team TAARA for the 2026 NASA Space Apps Challenge (Flame in Freefall).
-Analyze NASA Physical Sciences Informatics (PSI) microgravity combustion investigations for engineers, researchers, and students.
-Always:
-1. Contrast microgravity (0g) behavior against normal gravity (1g) buoyancy-driven combustion.
-2. Reference specific experimental variables (fuel type, sample geometry, oxygen %, airflow speed in cm/s, diluents, sensors).
-3. Translate findings into concrete spacecraft fire-safety rules (smoke detector thresholds, cabin ventilation shutoff rules, material flammability limits, suppression margins).
-Keep outputs structured, quantitative, and grounded strictly in the provided NASA PSI dataset.
-"""
-
-def ask_gemini(prompt: str) -> str:
-    if not client:
-        return "⚠️ `GEMINI_API_KEY` not found. Check your `.env` file locally or Secrets in Streamlit Cloud."
-    try:
-        response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_PROMPT,
-                temperature=0.3,
-            ),
-        )
-        return response.text
-    except Exception as e:
-        return f"Gemini API Error: {e}"
-
-# 2. Load data/verified_psi.json adaptively
+# --- LOAD & NORMALIZE PSI DATASET ---
 @st.cache_data
-def load_verified_data() -> pd.DataFrame:
-    json_path = Path("data/verified_psi.json")
-    if json_path.exists():
-        try:
-            with open(json_path, "r", encoding="utf-8") as f:
-                raw = json.load(f)
-            if isinstance(raw, list):
-                df = pd.DataFrame(raw)
-            elif isinstance(raw, dict):
-                # Support dict wrapped under a top-level key like {"investigations": [...]} or keyed by PSI ID
-                list_candidates = [v for v in raw.values() if isinstance(v, list)]
-                if list_candidates:
-                    df = pd.DataFrame(list_candidates[0])
-                else:
-                    df = pd.DataFrame.from_dict(raw, orient="index").reset_index()
-            else:
-                df = pd.DataFrame()
+def load_psi_data(filepath: str = "psi_data.json"):
+    with open(filepath, "r", encoding="utf-8") as f:
+        raw = json.load(f)
 
-            if not df.empty:
-                return df
-        except Exception as e:
-            st.warning(f"Could not parse `data/verified_psi.json` automatically ({e}). Loading fallback baseline.")
+    records = []
+    for psi_key, item in raw.items():
+        pillar = item.get("pillar", "unknown")
+        parent_id = item.get("parent_investigation")
+        if pillar == "unknown" and parent_id and parent_id in raw:
+            pillar = f"{raw[parent_id].get('pillar', 'General')} (Ground Study)"
+        elif pillar == "unknown":
+            pillar = f"Non-Combustion ({item.get('research_area', 'Other')})"
 
-    # Baseline fallback aligned with NASA PSI Flame in Freefall investigations
-    return pd.DataFrame([
-        {
-            "psi_id": "PSI-FLEX",
-            "acronym": "FLEX",
-            "title": "Flame Extinguishment Experiment",
-            "fuel_type": "Liquid Droplets (Heptane, Methanol)",
-            "oxygen_pct": 21.0,
-            "airflow_cm_s": 0.0,
-            "sensors": "UV/Visible radiometers, high-speed cameras, GC",
-            "objective": "Determine minimum suppressant concentrations and cool-flame extinction limits in 0g.",
-            "fire_risk_score": 9.2,
-        },
-        {
-            "psi_id": "PSI-BASS",
-            "acronym": "BASS / BASS-II",
-            "title": "Burning and Suppression of Solids",
-            "fuel_type": "Solid Polymers & Fabrics (PMMA, Nomex, Cotton-Fiberglass)",
-            "oxygen_pct": 18.0,
-            "airflow_cm_s": 10.0,
-            "sensors": "IR/HD video, thermocouples, radiometers",
-            "objective": "Measure solid-fuel flame spread rates and extinction limits in low-speed cabin flows.",
-            "fire_risk_score": 9.5,
-        },
-        {
-            "psi_id": "PSI-SAME",
-            "acronym": "SAME / SAME-R",
-            "title": "Smoke and Aerosol Measurement Experiment",
-            "fuel_type": "Spacecraft Wiring & Polymers (Kapton, Teflon, Silicone)",
-            "oxygen_pct": 21.0,
-            "airflow_cm_s": 5.0,
-            "sensors": "Laser extinction, ionization/photoelectric smoke detectors",
-            "objective": "Characterize smoke particle size distributions from overheated spacecraft materials.",
-            "fire_risk_score": 8.9,
-        },
-        {
-            "psi_id": "PSI-EFIELD",
-            "acronym": "E-FIELD Flames (ACME)",
-            "title": "Electric-Field Effects on Laminar Diffusion Flames",
-            "fuel_type": "Gaseous Fuels (Methane, Ethylene)",
-            "oxygen_pct": 21.0,
-            "airflow_cm_s": 8.0,
-            "sensors": "Ion current sensors, high-speed imaging, radiometers",
-            "objective": "Use electric fields to mimic partial gravity (Moon/Mars) and actively control flames.",
-            "fire_risk_score": 8.3,
-        },
-        {
-            "psi_id": "PSI-181",
-            "acronym": "PSI-181 (SOLDER)",
-            "title": "Microgravity Soldering & Electronic Joint Reliability",
-            "fuel_type": "Rosin/Polymer Flux & PCB Substrates",
-            "oxygen_pct": 21.0,
-            "airflow_cm_s": 2.0,
-            "sensors": "Thermal imaging, optical microscopy, X-ray inspection",
-            "objective": "Evaluate thermal behavior and flux outgassing during in-space electronics repair.",
-            "fire_risk_score": 7.6,
-        },
-    ])
+        is_combustion = item.get("research_area") == "Combustion Science"
+        is_primary = bool(item.get("is_primary", False))
+        pub_count = len(item.get("publications", []))
 
-df = load_verified_data()
+        records.append({
+            "psi_id": item.get("psi_id", psi_key),
+            "acronym": item.get("acronym") if item.get("acronym") != "unknown" else "—",
+            "name": item.get("name", ""),
+            "pillar": pillar,
+            "raw_pillar": item.get("pillar", "unknown"),
+            "is_primary": is_primary,
+            "is_combustion": is_combustion,
+            "project_type": item.get("project_type", "unknown"),
+            "research_area": item.get("research_area", "unknown"),
+            "sub_research_area": item.get("sub_research_area", "unknown"),
+            "flight_platform": item.get("flight_platform", "unknown"),
+            "hardware": item.get("hardware", "unknown"),
+            "managing_center": item.get("managing_center", "unknown"),
+            "start_date": item.get("start_date", "unknown"),
+            "end_date": item.get("end_date", "unknown"),
+            "parent_investigation": parent_id or "None (Primary)",
+            "related_ground_studies": ", ".join(item.get("related_ground_studies", [])) or "None",
+            "pub_count": pub_count,
+            "objective": item.get("objective", ""),
+            "approach": item.get("approach", ""),
+            "hypothesis": item.get("hypothesis", ""),
+            "research_impacts": item.get("research_impacts", ""),
+            "doi": item.get("doi", ""),
+            "publications": item.get("publications", []),
+            "contacts": item.get("contacts", []),
+        })
 
-# --- Header ---
-st.title("🔥 Flame in Freefall — Microgravity Fire Safety SI Dashboard")
-st.caption("Team TAARA | NASA Space Apps Challenge 2026 | Powered by NASA PSI Data & Gemini")
+    df = pd.DataFrame(records)
+    df["psi_num"] = df["psi_id"].str.replace("PSI-", "", regex=False).astype(int)
+    df = df.sort_values("psi_num").reset_index(drop=True)
+    return df, raw
 
-# --- Sidebar Dynamic Filters ---
-st.sidebar.header("🔬 Filter & Rank Experiments")
-search_term = st.sidebar.text_input("Search keyword (fuel, sensor, PSI ID, acronym):", "")
+def calculate_mission_score(row: pd.Series, env_profile: str) -> float:
+    """Dynamically computes Fire-Safety Relevance Score (0-100) tailored to mission gravity & atmosphere."""
+    if not row["is_combustion"]:
+        return 12.0  # Non-combustion control baseline (e.g., PSI-108, PSI-181)
+
+    text_blob = f"{row['name']} {row['objective']} {row['hypothesis']} {row['research_impacts']} {row['sub_research_area']}".lower()
+    pillar = row["pillar"].lower()
+
+    # Base foundation: Primary flight vs. Ground validation + literature maturity
+    score = 32.0
+    if row["is_primary"]:
+        score += 16.0
+    score += min(row["pub_count"] * 0.45, 14.0)  # Up to 14 pts for peer-reviewed depth
+
+    if "Lunar" in env_profile:
+        # Moon (1/6 g, 34% O2 / 8.2 psi): Solid flammability in elevated O2, radiative extinction, material screening
+        if "solids" in pillar:
+            score += 22.0
+        elif "detection" in pillar:
+            score += 14.0
+        elif "gas flames" in pillar:
+            score += 12.0
+        elif "droplets" in pillar:
+            score += 10.0
+
+        for kw in ["oxygen", "flammability", "pmma", "sibal", "saffire", "bass", "test 1", "test 2", "cone calorimeter"]:
+            if kw in text_blob:
+                score += 2.5
+
+    elif "Martian" in env_profile:
+        # Mars (3/8 g): Buoyant-to-forced flow transition, large-scale cabin spread, smoke transport
+        if "solids" in pillar:
+            score += 18.0
+        elif "gas flames" in pillar:
+            score += 17.0
+        elif "detection" in pillar:
+            score += 15.0
+        elif "droplets" in pillar:
+            score += 11.0
+
+        for kw in ["buoyancy", "concurrent", "opposed", "coflow", "airflow", "ventilation", "smoke", "scale"]:
+            if kw in text_blob:
+                score += 2.5
+
+    else:
+        # Orbital ISS (0 g): Droplet extinguishment, cool flames, microgravity aerosol sizing, quiescent burning
+        if "droplets" in pillar:
+            score += 20.0
+        elif "detection" in pillar:
+            score += 19.0
+        elif "gas flames" in pillar:
+            score += 16.0
+        elif "solids" in pillar:
+            score += 14.0
+
+        for kw in ["cool flame", "extinguishment", "aerosol", "particulate", "quiescent", "spherical", "suppressant"]:
+            if kw in text_blob:
+                score += 2.5
+
+    return round(min(score, 100.0), 1)
+
+try:
+    df, raw_dict = load_psi_data()
+except Exception as e:
+    st.error(f"Could not load `psi_data.json`: {e}")
+    st.stop()
+
+# --- SIDEBAR CONTROLS ---
+with st.sidebar:
+    st.title("🔥 Team TAARA")
+    st.caption("NASA Space Apps Challenge | Flame in Freefall")
+    st.divider()
+
+    target_env = st.selectbox(
+        "Target Mission Environment",
+        [
+            "Lunar Habitat (Moon — 1/6 g, 34% O₂ / 8.2 psi Exploration Atmosphere)",
+            "Martian Habitat (Mars — 3/8 g, Partial Gravity Buoyancy Transition)",
+            "Orbital Transit / ISS (Microgravity — 0 g, Forced Ventilation)",
+        ],
+    )
+
+    include_non_combustion = st.checkbox(
+        "Include Non-Combustion Controls (PSI-108, PSI-181)",
+        value=True,
+        help="Shows Fluid Physics & Materials Science records from the PSI archive as negative/cross-domain controls.",
+    )
+
+    study_filter = st.radio(
+        "Investigation Tier",
+        ["All Investigations", "Primary Flight Experiments Only", "Ground Validation Studies Only"],
+    )
+
+    available_pillars = sorted(df["pillar"].unique().tolist())
+    selected_pillars = st.multiselect(
+        "Combustion & Science Pillars",
+        options=available_pillars,
+        default=available_pillars,
+    )
+
+    st.divider()
+    st.markdown("**API Status:** " + ("🟢 Gemini Connected" if client else "🔴 Missing `GEMINI_API_KEY` in `.env`"))
+
+# --- COMPUTE DYNAMIC SCORES & APPLY FILTERS ---
+df["readiness_score"] = df.apply(lambda r: calculate_mission_score(r, target_env), axis=1)
 
 filtered_df = df.copy()
-if search_term.strip():
-    mask = filtered_df.astype(str).apply(
-        lambda col: col.str.contains(search_term, case=False, na=False)
-    ).any(axis=1)
-    filtered_df = filtered_df[mask]
+if not include_non_combustion:
+    filtered_df = filtered_df[filtered_df["is_combustion"]]
+if study_filter == "Primary Flight Experiments Only":
+    filtered_df = filtered_df[filtered_df["is_primary"]]
+elif study_filter == "Ground Validation Studies Only":
+    filtered_df = filtered_df[~filtered_df["is_primary"]]
+if selected_pillars:
+    filtered_df = filtered_df[filtered_df["pillar"].isin(selected_pillars)]
 
-numeric_cols = filtered_df.select_dtypes(include="number").columns.tolist()
-text_cols = [c for c in filtered_df.columns if c not in numeric_cols]
+# --- HEADER & KPI METRICS ---
+st.title("🔥 Flame in Freefall: Microgravity Combustion Intelligence Dashboard")
+st.markdown(
+    f"**Active Mission Profile:** `{target_env}` — Dynamically ranking & interpreting NASA Physical Sciences Informatics (PSI) datasets."
+)
 
-# --- Top Metrics ---
-m1, m2, m3 = st.columns(3)
-m1.metric("Verified PSI Records Loaded", len(filtered_df))
-m2.metric("Data Attributes Tracked", len(filtered_df.columns))
-m3.metric("SI Engine Status", "Connected (Gemini 2.5 Flash)" if client else "Missing API Key")
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("Filtered Investigations", len(filtered_df), f"of {len(df)} total PSI records")
+col2.metric("Primary Flight Studies", int(filtered_df["is_primary"].sum()))
+col3.metric("Peer-Reviewed Papers", int(filtered_df["pub_count"].sum()))
+top_row = filtered_df.sort_values(["readiness_score", "pub_count"], ascending=[False, False]).iloc[0] if not filtered_df.empty else None
+col4.metric(
+    "Top Ranked Dataset",
+    f"{top_row['psi_id']} ({top_row['acronym']})" if top_row is not None else "N/A",
+    f"Score: {top_row['readiness_score']}/100" if top_row is not None else "",
+)
 
-# --- Main Tabs ---
-tab1, tab2, tab3 = st.tabs([
-    "📊 Rank & Compare PSI Experiments",
-    "🧠 SI Fire-Safety Interpreter",
-    "📂 Extracted / Raw PSI Files",
+st.divider()
+
+# --- TABS ---
+tab1, tab2, tab3, tab4 = st.tabs([
+    "📊 Mission Ranking & Analytics",
+    "🤖 AI Fire-Safety Synthesizer",
+    "🔬 Investigation Deep-Dive",
+    "🔗 Flight-to-Ground Lineage",
 ])
 
+# === TAB 1: RANKING & ANALYTICS ===
 with tab1:
-    st.subheader("Microgravity Combustion Parameter Comparison & Ranking")
-    if filtered_df.empty:
-        st.warning("No records match your search filter.")
-    else:
-        if numeric_cols and text_cols:
-            c_left, c_right = st.columns([1.2, 1.3])
-            with c_left:
-                rank_metric = st.selectbox("Rank / Plot by Numeric Metric:", numeric_cols, index=len(numeric_cols) - 1)
-                label_col = st.selectbox("Label Axis:", text_cols, index=0)
-                sorted_df = filtered_df.sort_values(by=rank_metric, ascending=True)
-                fig = px.bar(
-                    sorted_df,
-                    x=rank_metric,
-                    y=label_col,
-                    orientation="h",
-                    text=rank_metric,
-                    title=f"Comparison by {rank_metric}",
-                )
-                fig.update_layout(height=430)
-                st.plotly_chart(fig, width="stretch")
-            with c_right:
-                st.dataframe(filtered_df, width="stretch", height=430)
-        else:
-            st.dataframe(filtered_df, width="stretch")
+    c_left, c_right = st.columns([1.3, 1])
 
-with tab2:
-    st.subheader("SI-Powered Experiment Breakdown & Spacecraft Safety Insights")
-    if filtered_df.empty:
-        st.info("Clear the sidebar search filter to select an experiment.")
-    else:
-        label_col = text_cols[0] if text_cols else filtered_df.columns[0]
-        options = [f"{i}: {row[label_col]}" for i, row in filtered_df.iterrows()]
-        choice = st.selectbox("Choose a NASA PSI Investigation to Interpret:", options)
-        selected_idx = int(choice.split(":")[0])
-        record = filtered_df.loc[selected_idx].to_dict()
+    with c_left:
+        st.subheader("Fire-Safety Relevance Ranking")
+        ranked_df = filtered_df.sort_values(["readiness_score", "pub_count"], ascending=[True, True])
+        fig_bar = px.bar(
+            ranked_df,
+            x="readiness_score",
+            y="psi_id",
+            color="pillar",
+            orientation="h",
+            hover_data=["acronym", "name", "pub_count", "project_type"],
+            labels={"readiness_score": "Mission Fire-Safety Score (0–100)", "psi_id": "PSI ID"},
+            height=540,
+        )
+        fig_bar.update_layout(
+            margin=dict(l=10, r=10, t=20, b=10),
+            yaxis={"categoryorder": "total ascending"},
+        )
+        st.plotly_chart(fig_bar, use_container_width=True)
 
-        with st.expander("📋 Verified Experiment Parameters", expanded=True):
-            st.json(record)
+    with c_right:
+        st.subheader("Research Coverage by Pillar & Literature Output")
+        fig_sun = px.treemap(
+            filtered_df,
+            path=["research_area", "pillar", "psi_id"],
+            values="pub_count",
+            color="readiness_score",
+            color_continuous_scale="YlOrRd",
+            hover_data=["acronym", "name"],
+            height=540,
+        )
+        fig_sun.update_layout(margin=dict(l=10, r=10, t=20, b=10))
+        st.plotly_chart(fig_sun, use_container_width=True)
 
-        custom_q = st.text_input(
-            "Ask a specific spacecraft engineering question (or leave blank for full synthesis):",
-            placeholder="e.g., How does low-speed cabin ventilation affect flame spread and smoke detection here?",
+    header_col, btn_col = st.columns([3, 1])
+    with header_col:
+        st.subheader("Ranked PSI Investigation Matrix")
+    with btn_col:
+        export_cols = [
+            "psi_id", "acronym", "name", "pillar", "project_type",
+            "flight_platform", "pub_count", "readiness_score", "parent_investigation"
+        ]
+        ranked_table = filtered_df.sort_values(["readiness_score", "pub_count"], ascending=[False, False])[export_cols]
+        st.download_button(
+            label="📥 Export Ranked CSV",
+            data=ranked_table.to_csv(index=False).encode("utf-8"),
+            file_name="taara_psi_ranked.csv",
+            mime="text/csv",
+            use_container_width=True,
         )
 
-        if st.button("Generate SI Fire Safety Analysis", type="primary"):
-            with st.spinner("Analyzing microgravity combustion parameters..."):
-                question = custom_q.strip() or (
-                    "1) Summarize the experimental objectives, fuel/sample geometry, oxygen %, airflow speed, and sensors.\n"
-                    "2) Explain how 0g behavior diverges from 1g buoyancy-driven combustion.\n"
-                    "3) Provide 3 concrete spacecraft fire-safety design or operational recommendations."
-                )
-                prompt = f"NASA PSI Record:\n{json.dumps(record, indent=2)}\n\nTask:\n{question}"
-                st.markdown(ask_gemini(prompt))
+    st.dataframe(ranked_table, use_container_width=True, hide_index=True)
 
+# === TAB 2: AI FIRE-SAFETY SYNTHESIZER ===
+with tab2:
+    st.subheader("🤖 Gemini-Powered Partial-Gravity Extrapolation Engine")
+    st.markdown(
+        "Select one or more PSI investigations to synthesize how $0g$ ISS findings translate to **Moon ($1/6g$)** and **Mars ($3/8g$)** habitat fire detection, material screening, and suppression."
+    )
+
+    default_top4 = filtered_df.sort_values(["readiness_score", "pub_count"], ascending=[False, False])["psi_id"].head(4).tolist()
+
+    selected_ids = st.multiselect(
+        "Select PSI Investigations to Analyze (Pre-loaded with Top 4 for Active Environment)",
+        options=df["psi_id"].tolist(),
+        default=default_top4,
+        format_func=lambda x: f"{x} ({raw_dict[x].get('acronym', '')}) — {raw_dict[x].get('name', '')[:65]}",
+    )
+
+    analysis_goal = st.selectbox(
+        "Analysis Focus",
+        [
+            "Extrapolate 0g Results to Moon (1/6 g) & Mars (3/8 g) Habitat Fire Safety",
+            "Compare Material Flammability Screening (NASA-STD-6001 1g vs Microgravity)",
+            "Design Smoke Detection & Suppression Protocol for Low-Gravity Habitats",
+            "Identify Non-Combustion / Out-of-Scope Control Records in Dataset",
+        ],
+    )
+
+    if st.button("🚀 Run AI Mission Synthesis", type="primary"):
+        if not client:
+            st.error("Gemini API key not found. Add `GEMINI_API_KEY=your_key` inside your `.env` file.")
+        elif not selected_ids:
+            st.warning("Please select at least one PSI investigation.")
+        else:
+            context_payload = []
+            for pid in selected_ids:
+                rec = raw_dict[pid]
+                score_val = df.loc[df["psi_id"] == pid, "readiness_score"].values[0]
+                context_payload.append({
+                    "psi_id": pid,
+                    "mission_relevance_score": float(score_val),
+                    "name": rec.get("name"),
+                    "acronym": rec.get("acronym"),
+                    "research_area": rec.get("research_area"),
+                    "pillar": rec.get("pillar"),
+                    "project_type": rec.get("project_type"),
+                    "objective": rec.get("objective"),
+                    "approach": rec.get("approach"),
+                    "hypothesis": rec.get("hypothesis"),
+                    "research_impacts": rec.get("research_impacts"),
+                    "sample_publications": [p.get("title") for p in rec.get("publications", [])[:5]],
+                })
+
+            prompt = f"""
+You are a NASA Spacecraft Fire Safety & Microgravity Combustion Scientist supporting Team TAARA for the NASA Space Apps Challenge ('Flame in Freefall').
+
+Target Mission Profile: {target_env}
+Analysis Goal: {analysis_goal}
+
+Analyze the following NASA PSI investigations:
+{json.dumps(context_payload, indent=2)}
+
+Provide a structured, rigorous engineering assessment with:
+1. **Executive Risk Verdict** (Rank the selected studies by criticality for {target_env}).
+2. **Physics Translation ($1g \\rightarrow 0g \\rightarrow 1/6g$ & $3/8g$)**: Explain how buoyant convection suppression, radiative extinction, limiting oxygen index (LOI), soot/aerosol aggregation, or cool-flame regimes shift in partial gravity.
+3. **Actionable Habitat Engineering Controls**: Specific recommendations for material selection (e.g., PMMA, Sibal, Nomex), ventilation limits (cm/s), smoke detectors, or suppressants ($N_2$, $CO_2$, He).
+4. **Data Anomalies / Scope Caveats**: Explicitly flag if any selected record (such as PSI-108 Fluid Physics or PSI-181 Soldering/Materials Science) is non-combustion or requires careful boundary interpretation.
+"""
+            with st.spinner("Synthesizing PSI combustion physics with Gemini..."):
+                models_to_try = ["gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-3.8-pro"]
+                response_text = None
+                last_err = None
+
+                for model_name in models_to_try:
+                    for attempt in range(2):
+                        try:
+                            response = client.models.generate_content(
+                                model=model_name,
+                                contents=prompt,
+                            )
+                            response_text = response.text
+                            break
+                        except Exception as api_err:
+                            last_err = api_err
+                            if "503" in str(api_err) or "429" in str(api_err):
+                                time.sleep(1.5)
+                                continue
+                            break
+                    if response_text:
+                        break
+
+                if response_text:
+                    st.markdown(response_text)
+                else:
+                    st.error(f"Gemini API temporarily busy across fallback models: {last_err}")
+
+# === TAB 3: INVESTIGATION DEEP-DIVE ===
 with tab3:
-    st.subheader("Inspect Local Files (`data/extracted` & `data/raw`) or Upload CSV")
-    local_files = []
-    for folder in ["data/extracted", "data/raw"]:
-        p = Path(folder)
-        if p.exists():
-            local_files.extend(sorted(p.rglob("*.csv")))
-            local_files.extend(sorted(p.rglob("*.json")))
+    st.subheader("🔬 Investigation Explorer & Literature Index")
+    chosen_id = st.selectbox(
+        "Inspect Investigation",
+        options=df["psi_id"].tolist(),
+        format_func=lambda x: f"{x} — {raw_dict[x].get('name', '')}",
+    )
+    item = raw_dict[chosen_id]
 
-    if local_files:
-        selected_file = st.selectbox("Select a local file from your repo:", [str(f) for f in local_files])
-        file_path = Path(selected_file)
-        if file_path.suffix == ".csv":
-            sub_df = pd.read_csv(file_path)
-            st.write(f"**{file_path.name}** — {sub_df.shape[0]} rows × {sub_df.shape[1]} columns")
-            st.dataframe(sub_df.head(30), width="stretch")
-            num_cols = sub_df.select_dtypes(include="number").columns.tolist()
-            if len(num_cols) >= 2:
-                x_c = st.selectbox("X-Axis", num_cols, index=0, key="local_x")
-                y_c = st.selectbox("Y-Axis", num_cols, index=1, key="local_y")
-                st.plotly_chart(px.line(sub_df, x=x_c, y=y_c, title=f"{y_c} vs {x_c}"), width="stretch")
-        elif file_path.suffix == ".json":
-            with open(file_path, "r", encoding="utf-8") as jf:
-                st.json(json.load(jf))
+    m1, m2, m3, m4 = st.columns(4)
+    m1.info(f"**Acronym:** {item.get('acronym', 'unknown')}")
+    m2.info(f"**Pillar:** {item.get('pillar', 'unknown')}")
+    m3.info(f"**Type:** {item.get('project_type', 'unknown')}")
+    m4.info(f"**Platform:** {item.get('flight_platform', 'unknown')}")
+
+    st.markdown(f"### {item.get('name')}")
+    st.caption(f"DOI: `{item.get('doi')}` | Managing Center: {item.get('managing_center')} | Dates: {item.get('start_date')} to {item.get('end_date')}")
+
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.markdown("#### 🎯 Objective & Hypothesis")
+        st.write("**Objective:**", item.get("objective"))
+        st.write("**Hypothesis:**", item.get("hypothesis"))
+    with col_b:
+        st.markdown("#### 🧪 Experimental Approach & Hardware")
+        st.write("**Hardware:**", item.get("hardware"))
+        st.write("**Approach:**", item.get("approach"))
+
+    st.markdown("#### 🚀 Spacecraft Fire Safety & Earth Research Impacts")
+    st.success(item.get("research_impacts"))
+
+    pubs = item.get("publications", [])
+    st.markdown(f"#### 📚 Associated Publications ({len(pubs)})")
+    if pubs:
+        st.dataframe(pd.DataFrame(pubs), use_container_width=True, hide_index=True)
     else:
-        st.info("No `.csv` or `.json` files detected yet inside `data/extracted` or `data/raw`.")
+        st.write("No publications listed in this PSI record.")
 
-    uploaded = st.file_uploader("Or upload any NASA PSI CSV file directly:", type=["csv"])
-    if uploaded:
-        up_df = pd.read_csv(uploaded)
-        st.dataframe(up_df.head(30), width="stretch")
-        if st.button("Interpret Uploaded CSV with SI"):
-            with st.spinner("Analyzing sensor statistics..."):
-                summary = up_df.describe().to_string()
-                st.markdown(ask_gemini(f"File: {uploaded.name}\nColumns: {list(up_df.columns)}\nStats:\n{summary}"))
+# === TAB 4: FLIGHT-TO-GROUND LINEAGE ===
+with tab4:
+    st.subheader("🔗 Flight-to-Ground Study Lineage & Cross-Domain Controls")
+    st.markdown(
+        "Shows how ISS/Cygnus primary flight experiments connect to follow-on ground CFD/modeling investigations in your dataset, plus non-combustion control records."
+    )
+
+    lineage_rows = []
+    for pid, rec in raw_dict.items():
+        if rec.get("parent_investigation") or rec.get("related_ground_studies") or rec.get("research_area") != "Combustion Science":
+            lineage_rows.append({
+                "PSI ID": pid,
+                "Acronym": rec.get("acronym"),
+                "Name": rec.get("name"),
+                "Research Area": rec.get("research_area"),
+                "Project Type": rec.get("project_type"),
+                "Parent Flight Study": rec.get("parent_investigation") or "—",
+                "Linked Ground Studies": ", ".join(rec.get("related_ground_studies", [])) or "—",
+            })
+
+    st.dataframe(pd.DataFrame(lineage_rows), use_container_width=True, hide_index=True)
