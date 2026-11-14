@@ -1,0 +1,124 @@
+ONTOLOGY SOURCE REFERENCE
+Term Source Name	EFO	NCIT	PSI
+Term Source File	http://data.bioontology.org/ontologies/EFO		https://psi.nasa.gov/
+Term Source Version	132		1.0
+Term Source Description	Experimental Factor Ontology		User defined terms
+INVESTIGATION
+Investigation Identifier	
+Investigation Title	
+Investigation Description	
+Investigation Submission Date	
+Investigation Public Release Date	
+INVESTIGATION PUBLICATIONS
+Investigation PubMed ID
+Investigation Publication DOI
+Investigation Publication Author List
+Investigation Publication Title
+Investigation Publication Status
+Investigation Publication Status Term Accession Number
+Investigation Publication Status Term Source REF
+INVESTIGATION CONTACTS
+Investigation Person Last Name
+Investigation Person First Name
+Investigation Person Mid Initials
+Investigation Person Email
+Investigation Person Phone
+Investigation Person Fax
+Investigation Person Address
+Investigation Person Affiliation
+Investigation Person Roles
+Investigation Person Roles Term Accession Number
+Investigation Person Roles Term Source REF
+STUDY
+Study Identifier	PSI-181
+Study Title	Structure and Properties of Pb-Sn and Pb-free Sn-Ag-Cu Solders Produced in Terrestrial vs. Microgravity Environments under Extremes of Elevated and Cryo Temperatures
+Study Description	
+Study Submission Date	17-Apr-2025
+Study Public Release Date	20-Aug-2025
+Study File Name	s_PSI-181.txt
+Comment[Acknowledgments]	
+Comment[Approach]	"The study examined three distinct solder alloys: the ISSI lead-based (40Pb-60Sn) composition, an off-eutectic 50Pb-50Sn formulation, and a lead-free alloy consisting of 95.5Sn-3.8Ag-0.7Cu.
+Microstructural characterization was performed on four solder specimens processed in microgravity from the ISSI investigation, one terrestrial ISSI solder, and a freshly fabricated terrestrial 40wt%Pb-60wt%Sn sample. These analyses elucidated the role of suppressed buoyancy and natural convection in void formation within microgravity environments. Evidence of void-induced Marangoni convection influencing microstructure development was demonstrated using wire-feed solder processed in space. The micromechanical response of solders fabricated under both terrestrial and microgravity conditions was further evaluated across a broad thermal range (–157ºC to +121ºC), simulating the conditions encountered externally on the International Space Station. Investigations under cryogenic conditions focused on the β-to-α phase transformation in Sn below 13ºC, examining associated volumetric expansion, internal stress evolution, and the ductile-to-brittle transition phenomena observed in Sn-based alloys. At ambient temperature, the influence of accelerated aging on both microstructural stability and mechanical performance was assessed."
+Comment[DOI]	10.60555/td9e-cz97
+Comment[Data Source Accession]	
+Comment[Data Source Link]	
+Comment[Experiment Hardware]	
+Comment[Experiment Hardware Link]	
+Comment[Flight Platform]	International Space Station (ISS)
+Comment[Funding]	NASA
+Comment[Hypothesis]	In microgravity environments, fluid dynamics are markedly constrained, predominantly governed by solidification-induced volumetric changes, thermally driven density gradients, and Marangoni convection. This suppression of fluid motion results in diminished mixing, causing voids and gas bubbles to remain entrapped within the solder joint during the solidification process. Such internal porosity critically impairs the solder’s thermal and electrical conductivity, while also compromising the mechanical robustness of the joint. To advance the feasibility of extended space missions, this study seeks to elucidate the fundamental mechanisms, observable phenomena, and process parameters that influence the structural and functional integrity of solder joints fabricated under terrestrial and microgravity conditions.
+Comment[Identifiers]	
+Comment[Investigation Acronym]	
+Comment[Investigation End Date]	12-31-2022
+Comment[Investigation Start Date]	01-01-2020
+Comment[Managing NASA Center]	Marshall Space Flight Center (MSFC)
+Comment[Mission End]	
+Comment[Mission Link]	
+Comment[Mission Name]	
+Comment[Mission Start]	
+Comment[Objective]	This study addresses the reliability of solder joints in space by pursuing two principal objectives: (1) Characterization of solder-joint formation under microgravity conditions aboard the International Space Station, specifically examining the impact of suppressed convective flow and buoyancy on 40Pb-60Sn alloys utilized in the In-Space Soldering Investigation (ISSI). (2) Evaluation of the solder’s material and mechanical properties under extreme thermal environments, including elevated and cryogenic temperature exposures characteristic of spaceflight conditions.
+Comment[Project Identifier]	
+Comment[Project Link]	
+Comment[Project Title]	
+Comment[Project Type]	Ground Investigation
+Comment[Proposal Title]	Structure, Properties, and Performance of Solder Joints in Terrestrial vs. Reduced-Gravity Environments
+Comment[Research Area]	Materials Science
+Comment[Research Impacts]	"The research presented in this project offers significant contributions across multiple space exploration initiatives:
+
+(i) The project objectives are closely aligned with ongoing NASA initiatives focused on metal joining techniques in reduced gravity environments. The three solder alloys investigated—selected in collaboration with NASA partners, underscoring the relevance of the study to future space exploration efforts, (ii) The findings are expected to inform the design of future experiments responsive to forthcoming NASA proposal calls, including those associated with the Artemis program, which aims to return humans to the lunar surface, (iii) The insights gained into microgravity fluid behavior and surface tension variation can be extended to a broad range of spaceflight-enabling technologies, such as boiling, heat transfer, combustion, welding, brazing, and soldering. This research enhances the understanding of gravity-driven separation processes—such as gas bubble removal—that must be accomplished via alternative mechanisms in microgravity conditions. (iv) The gravity-level-specific protocols (GLSPs) developed for various soldering configurations serve as practical guidance for future investigations into metal joining techniques under reduced gravity. These protocols may be adopted by scientists and flight personnel for welding, brazing, and soldering applications in spaceflight environments."
+Comment[Space Program]	NASA, PSI grant
+Comment[Study Grant Number]	
+Comment[SubResearch Area]	Microstructural Characterization, Terrestrial vs Microgravity Effects, Solder Joints
+STUDY DESIGN DESCRIPTORS
+Study Design Type	solidification	Marangoni Convection	Soldering	Microstructure Characterization	Micromechanical Testing	Porosity	Extreme Temperatures
+Study Design Type Term Accession Number	https://psi.nasa.gov/	https://psi.nasa.gov/	https://psi.nasa.gov/	https://psi.nasa.gov/	https://psi.nasa.gov/	https://psi.nasa.gov/	https://psi.nasa.gov/
+Study Design Type Term Source REF	PSI	PSI	PSI	PSI	PSI	PSI	PSI
+STUDY PUBLICATIONS
+Study PubMed ID
+Study Publication DOI
+Study Publication Author List
+Study Publication Title
+Study Publication Status
+Study Publication Status Term Accession Number
+Study Publication Status Term Source REF
+STUDY FACTORS
+Study Factor Name
+Study Factor Type
+Study Factor Type Term Accession Number
+Study Factor Type Term Source REF
+STUDY ASSAYS
+Study Assay File Name
+Study Assay Measurement Type
+Study Assay Measurement Type Term Accession Number
+Study Assay Measurement Type Term Source REF
+Study Assay Technology Type
+Study Assay Technology Type Term Accession Number
+Study Assay Technology Type Term Source REF
+Study Assay Technology Platform
+STUDY PROTOCOLS
+Study Protocol Name
+Study Protocol Type
+Study Protocol Type Term Accession Number
+Study Protocol Type Term Source REF
+Study Protocol Description
+Study Protocol URI
+Study Protocol Version
+Study Protocol Parameters Name
+Study Protocol Parameters Name Term Accession Number
+Study Protocol Parameters Name Term Source REF
+Study Protocol Components Name
+Study Protocol Components Type
+Study Protocol Components Type Term Accession Number
+Study Protocol Components Type Term Source REF
+STUDY CONTACTS
+Study Person Last Name	Pathak	Napolitano	Kumar	Falana
+Study Person First Name	Siddhartha	Ralph	Manish	Samuel
+Study Person Mid Initials		E.		
+Study Person Email	pathak@iastate.edu	ren1@iastate.edu	manishk@iastate.edu	falanaso@iastate.edu
+Study Person Phone				
+Study Person Fax				
+Study Person Address				
+Study Person Affiliation	Department of Material Science and Engineering - Iowa State University	Department of Material Science and Engineering - Iowa State University	Department of Material Science and Engineering - Iowa State University	Department of Material Science and Engineering - Iowa State University
+Study Person Roles	Principal Investigator (PI)	Co-Investigator (Co-I)	Graduate Student	Graduate Student
+Study Person Roles Term Accession Number	Principal Investigator (PI)	Co-Investigator (Co-I)	Graduate Student	Graduate Student
+Study Person Roles Term Source REF				
