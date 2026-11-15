@@ -8,7 +8,7 @@ import plotly.express as px
 import streamlit as st
 from dotenv import load_dotenv
 from google import genai
-from PIL import Image, ImageDraw, ImageFilter
+from PIL import Image, ImageDraw, ImageEnhance, ImageFilter
 import numpy as np
 
 # --- PAGE CONFIG ---
@@ -31,19 +31,28 @@ def get_gemini_client(api_key: str):
 
 client = get_gemini_client(API_KEY)
 
+# --- AUTO-RESOLVE EXTENSIONS (.jpg, .jpeg, .png, .webp) ---
+def resolve_asset_path(path: str) -> str:
+    if os.path.exists(path):
+        return path
+    base, _ = os.path.splitext(path)
+    for ext in [".jpg", ".jpeg", ".png", ".webp"]:
+        alt_path = base + ext
+        if os.path.exists(alt_path):
+            return alt_path
+    return path
+
 # --- IMAGE HELPER: true-alpha black keying, opacity, radial feathering ---
 @st.cache_data(show_spinner=False)
 def _process_image_b64(
     image_path: str,
-    mtime: float,  # part of the cache key so edited image files are picked up
+    mtime: float,
     key_black: bool,
     opacity: float,
     vignette: bool,
     max_width: int,
 ) -> str:
     img = Image.open(image_path).convert("RGBA")
-
-    # Downscale first: keeps the base64 payload (re-sent on every rerun) small and processing fast
     if max_width and img.width > max_width:
         new_h = int(img.height * max_width / img.width)
         img = img.resize((max_width, new_h), Image.LANCZOS)
@@ -52,7 +61,6 @@ def _process_image_b64(
     arr = np.asarray(img).astype(np.float32)
     alpha = arr[..., 3]
     if key_black:
-        # Dark/black pixels -> transparent, soft ramp between luminance 18 and 55
         lum = arr[..., :3].max(axis=2)
         ramp = np.clip((lum - 18.0) / 37.0, 0.0, 1.0)
         alpha = alpha * ramp
@@ -60,7 +68,6 @@ def _process_image_b64(
     img = Image.fromarray(np.dstack([arr[..., :3], alpha]).astype(np.uint8), "RGBA")
 
     if vignette:
-        # Soft radial edge fade so rectangular images melt into the dark UI
         mask = Image.new("L", (w, h), 0)
         draw = ImageDraw.Draw(mask)
         mx, my = int(w * 0.08), int(h * 0.08)
@@ -82,19 +89,18 @@ def get_processed_image_b64(
     vignette: bool = False,
     max_width: int = 900,
 ) -> str:
-    """Return a base64 PNG string, or "" if the image is missing or cannot be processed."""
-    if not os.path.exists(image_path):
+    resolved_path = resolve_asset_path(image_path)
+    if not os.path.exists(resolved_path):
         return ""
     try:
         return _process_image_b64(
-            image_path, os.path.getmtime(image_path), key_black, opacity, vignette, max_width
+            resolved_path, os.path.getmtime(resolved_path), key_black, opacity, vignette, max_width
         )
     except Exception:
         return ""
 
 
 def render_image(b64: str, style: str = "width:100%;", alt: str = "") -> None:
-    """Render a base64 PNG inline. Silently does nothing if the asset is missing."""
     if b64:
         st.markdown(
             f'<img src="data:image/png;base64,{b64}" alt="{alt}" style="{style}" />',
@@ -102,8 +108,131 @@ def render_image(b64: str, style: str = "width:100%;", alt: str = "") -> None:
         )
 
 
-# --- COSMIC OBSIDIAN THEME (+ optional 16% opacity background watermark) ---
-bg_b64 = get_processed_image_b64("assets/cosmic_banner.png", opacity=0.16, max_width=1600)
+# --- GRAPHICS SETTINGS ---
+IMG_SETTINGS = {
+    "sidebar_unicorn_width_pct": 85,
+    "tab_min_height_vh": 80,
+    "tab_bg_max_width": 1400,
+    "fireball_size_px": 150,
+    "fireball_orbit_radius_px": 125,
+    "fireball_orbit_seconds": 5,
+    "fireball_stage_height_px": 340,
+}
+
+TAB_STYLE = {
+    1: {"overlay_top": 0.36, "overlay_bottom": 0.50, "brightness": 1.20},
+    2: {"overlay_top": 0.40, "overlay_bottom": 0.52, "brightness": 1.20},
+    3: {"overlay_top": 0.18, "overlay_bottom": 0.34, "brightness": 1.75},
+    4: {"overlay_top": 0.34, "overlay_bottom": 0.48, "brightness": 1.25},
+}
+
+TAB_IMAGES = {
+    "tab1": "assets/flame_comparison_1g_vs_0g.jpg",
+    "tab2_lunar": "assets/moon_habitat.jpg",
+    "tab2_mars": "assets/mars_habitat.jpg",
+    "tab2_orbital": "assets/iss_cygnus_orbit.jpg",
+    "tab3": "assets/detection_suppression.jpg",
+    "tab4": "assets/iss_cygnus_orbit.jpg",
+}
+
+
+@st.cache_data(show_spinner=False)
+def _background_b64(image_path: str, mtime: float, max_width: int, quality: int, brightness: float) -> str:
+    img = Image.open(image_path).convert("RGB")
+    if max_width and img.width > max_width:
+        img = img.resize((max_width, int(img.height * max_width / img.width)), Image.LANCZOS)
+    if brightness != 1.0:
+        img = ImageEnhance.Brightness(img).enhance(brightness)
+    buf = BytesIO()
+    img.save(buf, format="JPEG", quality=quality, optimize=True)
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+def get_background_b64(image_path: str, max_width: int = 1400, quality: int = 72, brightness: float = 1.0) -> str:
+    resolved_path = resolve_asset_path(image_path)
+    if not os.path.exists(resolved_path):
+        return ""
+    try:
+        return _background_b64(resolved_path, os.path.getmtime(resolved_path), max_width, quality, brightness)
+    except Exception:
+        return ""
+
+
+def build_tab_background_css(target_env: str) -> str:
+    if "Lunar" in target_env:
+        tab2_img = TAB_IMAGES["tab2_lunar"]
+    elif "Martian" in target_env:
+        tab2_img = TAB_IMAGES["tab2_mars"]
+    else:
+        tab2_img = TAB_IMAGES["tab2_orbital"]
+    images = {1: TAB_IMAGES["tab1"], 2: tab2_img, 3: TAB_IMAGES["tab3"], 4: TAB_IMAGES["tab4"]}
+
+    rules = [".tabbg { display: none; }"]
+    for n, path in images.items():
+        s = TAB_STYLE[n]
+        b64 = get_background_b64(path, IMG_SETTINGS["tab_bg_max_width"], brightness=s["brightness"])
+        layers = f"linear-gradient(180deg, rgba(8,6,5,{s['overlay_top']}) 0%, rgba(14,8,4,{s['overlay_bottom']}) 100%)"
+        if b64:
+            layers += f', url("data:image/jpeg;base64,{b64}")'
+        rules.append(
+            f'div[role="tabpanel"]:has(.tabbg-{n}) {{ background-image: {layers}; '
+            f"background-size: cover; background-position: center; background-repeat: no-repeat; "
+            f"border-radius: 16px; border: 1px solid rgba(223,90,21,0.45); "
+            f"box-shadow: 0 0 28px rgba(223,90,21,0.12) inset; "
+            f"padding: 1.25rem 1.5rem 1.5rem 1.5rem; min-height: {IMG_SETTINGS['tab_min_height_vh']}vh; }}"
+        )
+    rules += [
+        'div[role="tabpanel"] [data-testid="stMarkdownContainer"], div[role="tabpanel"] label { text-shadow: 0 1px 8px rgba(0,0,0,0.95); }',
+        'div[role="tabpanel"] [data-testid="stPlotlyChart"] { background: rgba(8,5,3,0.55); border-radius: 12px; backdrop-filter: blur(4px); }',
+        'div[role="tabpanel"] [data-testid="stDataFrame"] { background: rgba(8,5,3,0.70); border-radius: 10px; backdrop-filter: blur(4px); }',
+        'div[role="tabpanel"] [data-testid="stAlert"] { backdrop-filter: blur(6px); }',
+        'button[data-baseweb="tab"][aria-selected="true"], button[data-baseweb="tab"][aria-selected="true"] p { color: #ff752b !important; }',
+        '[data-baseweb="tab-highlight"] { background-color: #ff752b !important; }',
+        '[data-testid="stMultiSelect"] span[data-baseweb="tag"] { background-color: #c84b11 !important; border: 1px solid #ff7a2f !important; }',
+    ]
+    return "\n".join(rules)
+
+
+def fireball_overlay_html(label: str = "Gemini is synthesizing your mission briefing...") -> str:
+    b64 = get_processed_image_b64("assets/flame_emblem.jpg", key_black=True, opacity=1.0, max_width=500)
+    ball_bg = f'url("data:image/png;base64,{b64}")' if b64 else "radial-gradient(circle, #ffe2a0 0%, #ff6a1a 45%, rgba(255,106,26,0) 70%)"
+    size = IMG_SETTINGS["fireball_size_px"]
+    radius = IMG_SETTINGS["fireball_orbit_radius_px"]
+    secs = IMG_SETTINGS["fireball_orbit_seconds"]
+    height = IMG_SETTINGS["fireball_stage_height_px"]
+    return "\n".join([
+        "<style>",
+        "@keyframes fbOrbit { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }",
+        "@keyframes fbSpin { from { transform: rotate(0deg); } to { transform: rotate(-720deg); } }",
+        "@keyframes fbPulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }",
+        "@keyframes fbGlow { 0%, 100% { transform: scale(1); opacity: 0.75; } 50% { transform: scale(1.18); opacity: 1; } }",
+        f".fb-stage {{ position: relative; width: 100%; height: {height}px; overflow: hidden; border-radius: 16px; "
+        f"border: 1px solid rgba(255,122,47,0.5); margin: 10px 0 6px 0; "
+        f"background: radial-gradient(ellipse at center, rgba(255,106,26,0.22) 0%, rgba(20,9,4,0.55) 55%, rgba(8,5,3,0.7) 100%); }}",
+        f".fb-track {{ position: absolute; left: 50%; top: 50%; width: {radius * 2}px; height: {radius * 2}px; "
+        f"margin: -{radius}px 0 0 -{radius}px; border: 1px dashed rgba(255,150,70,0.4); border-radius: 50%; }}",
+        f".fb-core {{ position: absolute; left: 50%; top: 50%; width: 70px; height: 70px; margin: -35px 0 0 -35px; border-radius: 50%; "
+        f"background: radial-gradient(circle, rgba(255,190,90,0.85) 0%, rgba(255,106,26,0.35) 55%, rgba(255,106,26,0) 75%); "
+        f"animation: fbGlow 2s ease-in-out infinite; }}",
+        f".fb-orbit {{ position: absolute; left: 50%; top: 50%; width: 0; height: 0; animation: fbOrbit {secs}s linear infinite; }}",
+        f".fb-arm {{ position: absolute; left: {radius}px; top: 0; width: 0; height: 0; }}",
+        f".fb-ball {{ position: absolute; width: {size}px; height: {size}px; left: -{size // 2}px; top: -{size // 2}px; "
+        f"background-image: {ball_bg}; background-size: contain; background-repeat: no-repeat; background-position: center; "
+        f"filter: drop-shadow(0 0 26px rgba(255,120,30,0.9)); animation: fbSpin {secs / 2:.1f}s linear infinite; }}",
+        f".fb-label {{ position: absolute; left: 0; right: 0; bottom: 14px; text-align: center; color: #ffb27a; "
+        f"font-size: 0.95rem; letter-spacing: 0.04em; text-shadow: 0 1px 8px rgba(0,0,0,0.95); animation: fbPulse 1.8s ease-in-out infinite; }}",
+        "</style>",
+        '<div class="fb-stage">',
+        '<div class="fb-track"></div>',
+        '<div class="fb-core"></div>',
+        '<div class="fb-orbit"><div class="fb-arm"><div class="fb-ball"></div></div></div>',
+        f'<div class="fb-label">🔥 {label}</div>',
+        "</div>",
+    ])
+
+
+# --- COSMIC OBSIDIAN THEME ---
+bg_b64 = get_processed_image_b64("assets/cosmic_banner.jpg", opacity=0.16, max_width=1600)
 bg_css = (
     f'background-image: linear-gradient(180deg, rgba(8,6,5,0.82) 0%, rgba(16,8,4,0.88) 100%), url("data:image/png;base64,{bg_b64}");'
     if bg_b64
@@ -127,7 +256,6 @@ st.markdown(
         background: linear-gradient(180deg, #0e0805 0%, #170b05 100%) !important;
         border-right: 1px solid rgba(223, 90, 21, 0.45);
     }}
-    /* Recolor red multiselect tags to Cosmic Amber */
     span[data-baseweb="tag"] {{
         background-color: #c84b11 !important;
         border: 1px solid #ff7a2f !important;
@@ -233,9 +361,8 @@ def load_psi_data(
     return df, raw, verified
 
 def calculate_mission_score(row: pd.Series, env_profile: str) -> float:
-    """Dynamically computes Fire-Safety Relevance Score (0-100) tailored to mission gravity & atmosphere."""
     if not row["is_combustion"] or row["fire_safety_function"] == "out_of_scope":
-        return 12.0  # Non-combustion control baseline (e.g., PSI-108, PSI-181)
+        return 12.0
 
     text_blob = (
         f"{row['name']} {row['objective']} {row['hypothesis']} {row['research_impacts']} "
@@ -304,11 +431,26 @@ except Exception as e:
 
 # --- SIDEBAR CONTROLS ---
 with st.sidebar:
-    flame_b64 = get_processed_image_b64("assets/flame_emblem.png", key_black=True, opacity=0.95, max_width=400)
+    flame_b64 = get_processed_image_b64("assets/flame_emblem.jpg", key_black=True, opacity=0.95, max_width=400)
     render_image(flame_b64, "width:135px; mix-blend-mode:screen; display:block; margin:0 auto -10px auto;", "TAARA flame emblem")
     st.title("🔥 Team TAARA")
     st.caption("NASA Space Apps Challenge | Flame in Freefall")
     st.divider()
+
+    unicorn_b64 = get_processed_image_b64("assets/shadow_unicorn.jpg", opacity=1.0, vignette=True, max_width=500)
+    render_image(
+        unicorn_b64,
+        f"width:{IMG_SETTINGS['sidebar_unicorn_width_pct']}%; display:block; margin:0 auto 4px auto; "
+        "filter:drop-shadow(0 0 18px rgba(223,90,21,0.45));",
+        "Shadow unicorn",
+    )
+    if unicorn_b64:
+        st.markdown(
+            '<div style="text-align:center; font-size:0.75rem; color:#c88a65; margin-bottom:6px;">'
+            'Cross-Domain Anomaly Controls</div>',
+            unsafe_allow_html=True,
+        )
+        st.divider()
 
     target_env = st.selectbox(
         "Target Mission Environment",
@@ -363,7 +505,7 @@ with hero_left:
         f"**Active Mission Profile:** `{target_env}` — Bounding partial-gravity fire safety using audited NASA PSI $0g$ flight & $1g$ ground datasets."
     )
 with hero_right:
-    astro_b64 = get_processed_image_b64("assets/astronaut_fire.png", opacity=0.88, vignette=True)
+    astro_b64 = get_processed_image_b64("assets/astronaut_fire.jpg", opacity=0.88, vignette=True)
     render_image(astro_b64, "width:100%; border-radius:14px;", "Astronaut observing a microgravity flame")
 
 col1, col2, col3, col4 = st.columns(4)
@@ -380,6 +522,7 @@ col4.metric(
 st.divider()
 
 # --- TABS ---
+st.markdown(f"<style>{build_tab_background_css(target_env)}</style>", unsafe_allow_html=True)
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Mission Ranking & Analytics",
     "🤖 AI Fire-Safety Synthesizer",
@@ -389,6 +532,7 @@ tab1, tab2, tab3, tab4 = st.tabs([
 
 # === TAB 1: RANKING & ANALYTICS ===
 with tab1:
+    st.markdown('<span class="tabbg tabbg-1"></span>', unsafe_allow_html=True)
     c_left, c_right = st.columns([1.3, 1])
 
     with c_left:
@@ -454,6 +598,7 @@ with tab1:
 
 # === TAB 2: AI FIRE-SAFETY SYNTHESIZER ===
 with tab2:
+    st.markdown('<span class="tabbg tabbg-2"></span>', unsafe_allow_html=True)
     t2_left, t2_right = st.columns([3, 1])
     with t2_left:
         st.subheader("🤖 Gemini-Powered Partial-Gravity Extrapolation Engine")
@@ -461,7 +606,7 @@ with tab2:
             "Select one or more PSI investigations to synthesize how $0g$ ISS findings and $1g$ ground models bound fire detection, material screening, and suppression for **Moon ($1/6g$)** and **Mars ($3/8g$)** habitats — backed by verbatim NASA evidence quotes."
         )
     with t2_right:
-        astro_tab2 = get_processed_image_b64("assets/astronaut_fire.png", opacity=0.82, vignette=True, max_width=600)
+        astro_tab2 = get_processed_image_b64("assets/astronaut_fire.jpg", opacity=0.82, vignette=True, max_width=600)
         render_image(astro_tab2, "width:100%;", "Astronaut observing a microgravity flame")
 
     default_top4 = filtered_df.sort_values(["readiness_score", "pub_count"], ascending=[False, False])["psi_id"].head(4).tolist()
@@ -491,7 +636,7 @@ with tab2:
                 "⚡ Fast AI (Lite Tier — Instant Demo)",
                 "🧠 Deep Research Mode (Flagship Tier — Full Synthesis)",
             ],
-            help="Fast AI uses high-quota Lite models (gemini-3.5-flash-lite) for rapid responses; Deep Research uses flagship models (gemini-3.8-flash / gemini-2.5-pro) for deeper engineering reasoning.",
+            help="Fast AI uses high-quota Lite models for rapid responses; Deep Research uses flagship models for deeper engineering reasoning.",
         )
 
     if st.button("🚀 Run AI Mission Synthesis", type="primary"):
@@ -576,6 +721,8 @@ Provide a structured, rigorous engineering assessment with:
                 ]
                 spinner_label = "Synthesizing rapid mission briefing with Fast AI (Lite tier)..."
 
+            fire_slot = st.empty()
+            fire_slot.markdown(fireball_overlay_html(spinner_label), unsafe_allow_html=True)
             with st.spinner(spinner_label):
                 response_text = None
                 active_model = None
@@ -595,6 +742,8 @@ Provide a structured, rigorous engineering assessment with:
                         time.sleep(2 if not is_deep else 3)
                         continue
 
+                fire_slot.empty()
+
                 if response_text:
                     st.caption(f"Mode: **{ai_speed_mode}** | Engine: `{active_model}` • Grounded strictly in human-verified NASA PSI evidence")
                     st.markdown(response_text)
@@ -603,6 +752,7 @@ Provide a structured, rigorous engineering assessment with:
 
 # === TAB 3: INVESTIGATION DEEP-DIVE & VERIFIED EVIDENCE ===
 with tab3:
+    st.markdown('<span class="tabbg tabbg-3"></span>', unsafe_allow_html=True)
     st.subheader("🔬 Investigation Explorer & Audited Evidence Trail")
     chosen_id = st.selectbox(
         "Inspect Investigation",
@@ -671,22 +821,11 @@ with tab3:
 
 # === TAB 4: FLIGHT-TO-GROUND LINEAGE ===
 with tab4:
-    t4_left, t4_right = st.columns([3.2, 1])
-    with t4_left:
-        st.subheader("🔗 Flight-to-Ground Study Lineage & Cross-Domain Controls")
-        st.markdown(
-            "Shows how ISS/Cygnus primary flight experiments connect to follow-on ground CFD/modeling investigations in your dataset, plus `out_of_scope` non-combustion control records (`PSI-108`, `PSI-181`)."
-        )
-    with t4_right:
-        unicorn_b64 = get_processed_image_b64("assets/shadow_unicorn.png", key_black=True, opacity=0.72, vignette=True, max_width=500)
-        if unicorn_b64:
-            st.markdown(
-                f'<div style="text-align:center;">'
-                f'<img src="data:image/png;base64,{unicorn_b64}" alt="Cross-domain anomaly silhouette" style="width:155px;" />'
-                f'<div style="font-size:0.75rem; color:#c88a65;">Cross-Domain Anomaly Controls</div>'
-                f'</div>',
-                unsafe_allow_html=True,
-            )
+    st.markdown('<span class="tabbg tabbg-4"></span>', unsafe_allow_html=True)
+    st.subheader("🔗 Flight-to-Ground Study Lineage & Cross-Domain Controls")
+    st.markdown(
+        "Shows how ISS/Cygnus primary flight experiments connect to follow-on ground CFD/modeling investigations in your dataset, plus `out_of_scope` non-combustion control records (`PSI-108`, `PSI-181`)."
+    )
 
     lineage_rows = []
     for pid, rec in raw_dict.items():
@@ -702,4 +841,4 @@ with tab4:
                 "Linked Ground Studies": ", ".join(rec.get("related_ground_studies", [])) or "—",
             })
 
-    st.dataframe(pd.DataFrame(lineage_rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(lineage_rows), use_container_width=True, hide_index=True)
