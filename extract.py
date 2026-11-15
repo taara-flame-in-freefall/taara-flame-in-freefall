@@ -50,17 +50,22 @@ FIELD_MAP = {
 }
 
 def parse_tabfile(path):
-    with open(path, encoding="utf-8", errors="replace") as f:
-        text = f.read()
-    lines = [ln.rstrip("\r") for ln in text.split("\n")]
+    """Parse an ISA-Tab file into {row_label: [values...]}.
+
+    ISA-Tab cells are quoted and can contain newlines (e.g. numbered objectives).
+    Splitting on "\n" truncates them, so we use the csv module, which understands
+    quoted multi-line cells.
+    """
     rows = {}
-    for ln in lines:
-        if "\t" not in ln:
-            continue
-        parts = ln.split("\t")
-        key = parts[0]
-        vals = [v.strip().strip('"') for v in parts[1:] if v.strip() != ""]
-        rows[key] = vals
+    with open(path, encoding="utf-8", errors="replace", newline="") as f:
+        for parts in csv.reader(f, delimiter="\t", quotechar='"'):
+            if len(parts) < 2 or not parts[0].strip():
+                continue
+            key = parts[0].strip()
+            vals = [" ".join(v.split()) for v in parts[1:] if v.strip() != ""]
+            if key in rows:          # keep first occurrence (investigation-level)
+                continue
+            rows[key] = vals
     return rows
 
 def first_or_unknown(rows, label):
@@ -169,3 +174,14 @@ if errors:
     print("Errors:")
     for e in errors:
         print(" -", e)
+
+# --- Quality report: catch truncated / empty fields before they reach the app ---
+SUSPICIOUS = []
+for pid, rec in records.items():
+    for field in ("objective", "approach"):
+        v = rec[field]
+        if v == "unknown" or len(v) < 80 or v.rstrip().endswith(":"):
+            SUSPICIOUS.append(f"{pid}.{field}: {len(v)} chars -> {v[:70]!r}")
+print(f"\nField-quality check: {len(SUSPICIOUS)} suspicious field(s)")
+for s in SUSPICIOUS:
+    print(" -", s)

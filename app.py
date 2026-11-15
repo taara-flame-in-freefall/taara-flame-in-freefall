@@ -87,14 +87,12 @@ def calculate_mission_score(row: pd.Series, env_profile: str) -> float:
     text_blob = f"{row['name']} {row['objective']} {row['hypothesis']} {row['research_impacts']} {row['sub_research_area']}".lower()
     pillar = row["pillar"].lower()
 
-    # Base foundation: Primary flight vs. Ground validation + literature maturity
     score = 32.0
     if row["is_primary"]:
         score += 16.0
-    score += min(row["pub_count"] * 0.45, 14.0)  # Up to 14 pts for peer-reviewed depth
+    score += min(row["pub_count"] * 0.45, 14.0)
 
     if "Lunar" in env_profile:
-        # Moon (1/6 g, 34% O2 / 8.2 psi): Solid flammability in elevated O2, radiative extinction, material screening
         if "solids" in pillar:
             score += 22.0
         elif "detection" in pillar:
@@ -109,7 +107,6 @@ def calculate_mission_score(row: pd.Series, env_profile: str) -> float:
                 score += 2.5
 
     elif "Martian" in env_profile:
-        # Mars (3/8 g): Buoyant-to-forced flow transition, large-scale cabin spread, smoke transport
         if "solids" in pillar:
             score += 18.0
         elif "gas flames" in pillar:
@@ -124,7 +121,6 @@ def calculate_mission_score(row: pd.Series, env_profile: str) -> float:
                 score += 2.5
 
     else:
-        # Orbital ISS (0 g): Droplet extinguishment, cool flames, microgravity aerosol sizing, quiescent burning
         if "droplets" in pillar:
             score += 20.0
         elif "detection" in pillar:
@@ -155,7 +151,7 @@ with st.sidebar:
     target_env = st.selectbox(
         "Target Mission Environment",
         [
-            "Lunar Habitat (Moon — 1/6 g, 34% O₂ / 8.2 psi Exploration Atmosphere)",
+            "Lunar Habitat (Moon — 1/6 g, ≥30% O₂ / ≤10.2 psi Exploration Atmosphere)",
             "Martian Habitat (Mars — 3/8 g, Partial Gravity Buoyancy Transition)",
             "Orbital Transit / ISS (Microgravity — 0 g, Forced Ventilation)",
         ],
@@ -163,7 +159,7 @@ with st.sidebar:
 
     include_non_combustion = st.checkbox(
         "Include Non-Combustion Controls (PSI-108, PSI-181)",
-        value=True,
+        value=False,
         help="Shows Fluid Physics & Materials Science records from the PSI archive as negative/cross-domain controls.",
     )
 
@@ -198,7 +194,7 @@ if selected_pillars:
 # --- HEADER & KPI METRICS ---
 st.title("🔥 Flame in Freefall: Microgravity Combustion Intelligence Dashboard")
 st.markdown(
-    f"**Active Mission Profile:** `{target_env}` — Dynamically ranking & interpreting NASA Physical Sciences Informatics (PSI) datasets."
+    f"**Active Mission Profile:** `{target_env}` — Bounding partial-gravity fire safety using NASA PSI $0g$ flight & $1g$ ground datasets."
 )
 
 col1, col2, col3, col4 = st.columns(4)
@@ -282,7 +278,7 @@ with tab1:
 with tab2:
     st.subheader("🤖 Gemini-Powered Partial-Gravity Extrapolation Engine")
     st.markdown(
-        "Select one or more PSI investigations to synthesize how $0g$ ISS findings translate to **Moon ($1/6g$)** and **Mars ($3/8g$)** habitat fire detection, material screening, and suppression."
+        "Select one or more PSI investigations to synthesize how $0g$ ISS findings and $1g$ ground models bound fire detection, material screening, and suppression for **Moon ($1/6g$)** and **Mars ($3/8g$)** habitats."
     )
 
     default_top4 = filtered_df.sort_values(["readiness_score", "pub_count"], ascending=[False, False])["psi_id"].head(4).tolist()
@@ -294,15 +290,26 @@ with tab2:
         format_func=lambda x: f"{x} ({raw_dict[x].get('acronym', '')}) — {raw_dict[x].get('name', '')[:65]}",
     )
 
-    analysis_goal = st.selectbox(
-        "Analysis Focus",
-        [
-            "Extrapolate 0g Results to Moon (1/6 g) & Mars (3/8 g) Habitat Fire Safety",
-            "Compare Material Flammability Screening (NASA-STD-6001 1g vs Microgravity)",
-            "Design Smoke Detection & Suppression Protocol for Low-Gravity Habitats",
-            "Identify Non-Combustion / Out-of-Scope Control Records in Dataset",
-        ],
-    )
+    col_goal, col_mode = st.columns([2, 1.2])
+    with col_goal:
+        analysis_goal = st.selectbox(
+            "Analysis Focus",
+            [
+                "Bound Moon (1/6 g) & Mars (3/8 g) Habitat Fire Safety Using 0g & 1g Data",
+                "Compare Material Flammability Screening (NASA-STD-6001 1g vs Microgravity)",
+                "Design Smoke Detection & Suppression Protocol for Low-Gravity Habitats",
+                "Identify Non-Combustion / Out-of-Scope Control Records in Dataset",
+            ],
+        )
+    with col_mode:
+        ai_speed_mode = st.radio(
+            "AI Inference Mode",
+            [
+                "⚡ Fast AI (Lite Tier — Instant Demo)",
+                "🧠 Deep Research Mode (Flagship Tier — Full Synthesis)",
+            ],
+            help="Fast AI uses high-quota Lite models (gemini-3.5-flash-lite) for rapid responses; Deep Research uses flagship models (gemini-3.8-flash / gemini-2.5-pro) for deeper engineering reasoning.",
+        )
 
     if st.button("🚀 Run AI Mission Synthesis", type="primary"):
         if not client:
@@ -329,48 +336,84 @@ with tab2:
                     "sample_publications": [p.get("title") for p in rec.get("publications", [])[:5]],
                 })
 
+            is_deep = "Deep Research" in ai_speed_mode
+            depth_instruction = (
+                "Provide an exhaustive, publication-grade engineering analysis covering coupled heat/mass transport, boundary layer scaling, and cross-investigation trade-offs."
+                if is_deep
+                else "Provide a crisp, high-impact executive summary with concise bullet points optimized for rapid mission review."
+            )
+
             prompt = f"""
 You are a NASA Spacecraft Fire Safety & Microgravity Combustion Scientist supporting Team TAARA for the NASA Space Apps Challenge ('Flame in Freefall').
 
 Target Mission Profile: {target_env}
 Analysis Goal: {analysis_goal}
+Response Style: {depth_instruction}
 
-Analyze the following NASA PSI investigations:
+CRITICAL GROUNDING RULES:
+- Cite the exact PSI ID (e.g., [PSI-26]) for every experimental claim.
+- Use ONLY experimental parameters, materials, and metrics explicitly stated in the supplied PSI records below.
+- Do NOT invent specific test numbers (such as flow speeds or concentrations) not present in the JSON; state "not specified in PSI metadata" where quantitative values are absent.
+- Remember that NASA PSI contains 0g flight and 1g ground/modeling datasets—frame Moon (1/6g) and Mars (3/8g) conclusions as engineering bounds/extrapolations rather than direct partial-gravity flight measurements.
+
+Supplied NASA PSI Investigations:
 {json.dumps(context_payload, indent=2)}
 
 Provide a structured, rigorous engineering assessment with:
-1. **Executive Risk Verdict** (Rank the selected studies by criticality for {target_env}).
-2. **Physics Translation ($1g \\rightarrow 0g \\rightarrow 1/6g$ & $3/8g$)**: Explain how buoyant convection suppression, radiative extinction, limiting oxygen index (LOI), soot/aerosol aggregation, or cool-flame regimes shift in partial gravity.
-3. **Actionable Habitat Engineering Controls**: Specific recommendations for material selection (e.g., PMMA, Sibal, Nomex), ventilation limits (cm/s), smoke detectors, or suppressants ($N_2$, $CO_2$, He).
-4. **Data Anomalies / Scope Caveats**: Explicitly flag if any selected record (such as PSI-108 Fluid Physics or PSI-181 Soldering/Materials Science) is non-combustion or requires careful boundary interpretation.
+1. **Executive Risk Verdict** (Rank the selected studies by criticality for {target_env} with PSI citations).
+2. **Physics Translation ($1g \\rightarrow 0g$ Bounding $1/6g$ & $3/8g$)**: Explain how buoyant convection suppression, radiative extinction, limiting oxygen index (LOI), soot/aerosol aggregation, or cool-flame regimes shift across gravity regimes based on the cited studies.
+3. **Actionable Habitat Engineering Controls**: Specific recommendations for material selection, ventilation management, smoke detectors, or suppressants grounded in the supplied studies.
+4. **Data Anomalies & Scope Caveats**: Explicitly flag any non-combustion records (such as PSI-108 Fluid Physics or PSI-181 Soldering/Materials Science) or missing metadata fields.
 """
-            with st.spinner("Synthesizing PSI combustion physics with Gemini..."):
-                models_to_try = ["gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-3.8-pro"]
+            if is_deep:
+                models_to_try = [
+                    "gemini-3.8-flash",
+                    "gemini-3.7-flash",
+                    "gemini-2.5-pro",
+                    "gemini-3.6-flash",
+                    "gemini-3.5-flash",
+                    "gemini-3.5-flash-lite",
+                    "gemini-3.1-flash-lite",
+                    "gemini-2.5-flash-lite",
+                ]
+                spinner_label = "Running Deep Research synthesis with flagship Gemini models..."
+            else:
+                models_to_try = [
+                    "gemini-3.5-flash-lite",
+                    "gemini-3.1-flash-lite",
+                    "gemini-2.5-flash-lite",
+                    "gemini-3.5-flash",
+                    "gemini-3.6-flash",
+                    "gemini-3.7-flash",
+                    "gemini-3.8-flash",
+                    "gemini-2.5-pro",
+                ]
+                spinner_label = "Synthesizing rapid mission briefing with Fast AI (Lite tier)..."
+
+            with st.spinner(spinner_label):
                 response_text = None
+                active_model = None
                 last_err = None
 
                 for model_name in models_to_try:
-                    for attempt in range(2):
-                        try:
-                            response = client.models.generate_content(
-                                model=model_name,
-                                contents=prompt,
-                            )
-                            response_text = response.text
-                            break
-                        except Exception as api_err:
-                            last_err = api_err
-                            if "503" in str(api_err) or "429" in str(api_err):
-                                time.sleep(1.5)
-                                continue
-                            break
-                    if response_text:
+                    try:
+                        response = client.models.generate_content(
+                            model=model_name,
+                            contents=prompt,
+                        )
+                        response_text = response.text
+                        active_model = model_name
                         break
+                    except Exception as api_err:
+                        last_err = api_err
+                        time.sleep(2 if not is_deep else 3)
+                        continue
 
                 if response_text:
+                    st.caption(f"Mode: **{ai_speed_mode}** | Engine: `{active_model}` • Grounded strictly in selected NASA PSI metadata")
                     st.markdown(response_text)
                 else:
-                    st.error(f"Gemini API temporarily busy across fallback models: {last_err}")
+                    st.error(f"Gemini API temporarily busy across all rotated models: {last_err}")
 
 # === TAB 3: INVESTIGATION DEEP-DIVE ===
 with tab3:
