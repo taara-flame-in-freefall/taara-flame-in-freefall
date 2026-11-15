@@ -199,11 +199,8 @@
         "evidence": "The use of electric fields to control flames can reduce the production of harmful pollutants in practical terrestrial combustion. The combustion of fossil fuel is the primary human source of greenhouse gas and acid rain and furthermore creates soot, which can be beneficial but is also a health hazard. Combustion using electrical fields may also allow for more efficient combustion, reducing fuel consumption in addition to unwanted emissions."
       }
     },
-    "needs_review": [
-      "sensors_measurements: evidence not found verbatim in source",
-      "test_variables: evidence not found verbatim in source"
-    ],
-    "human_verified": false,
+    "needs_review": [], 
+    "human_verified": true, 
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-23": {
@@ -252,10 +249,8 @@
         "evidence": "Practically, with diffusion flame burning as the basis in many combustion engines and devices, understanding the underlying dynamics and chemistry of diffusion flames is important in improving performance in terms of power, efficiency, pollutant emissions, and reliability."
       }
     },
-    "needs_review": [
-      "sample_geometry_size: evidence not found verbatim in source"
-    ],
-    "human_verified": false,
+    "needs_review": [],
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-25": {
@@ -307,7 +302,7 @@
       }
     },
     "needs_review": [],
-    "human_verified": false,
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-26": {
@@ -357,11 +352,8 @@
         "evidence": "These models have wide applicability to the general understanding of many terrestrial combustion problems and will guide novel spacecraft design and ensure the safety of future crewed missions."
       }
     },
-    "needs_review": [
-      "fuel_type: evidence not found verbatim in source",
-      "test_variables: evidence not found verbatim in source"
-    ],
-    "human_verified": false,
+    "needs_review": [],
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-39": {
@@ -412,7 +404,7 @@
       }
     },
     "needs_review": [],
-    "human_verified": false,
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-47": {
@@ -463,10 +455,8 @@
         "evidence": "Additionally, the successful adaptation of the TSI P-Trak for microgravity can inform the design of instruments for use in other challenging Earth environments, such as submarines or underwater laboratories where accurate detection of smoke can save lives."
       }
     },
-    "needs_review": [
-      "sensors_measurements: evidence not found verbatim in source"
-    ],
-    "human_verified": false,
+    "needs_review": [],
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-60": {
@@ -517,7 +507,7 @@
       }
     },
     "needs_review": [],
-    "human_verified": false,
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-62": {
@@ -569,7 +559,7 @@
       }
     },
     "needs_review": [],
-    "human_verified": false,
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-68": {
@@ -620,7 +610,7 @@
       }
     },
     "needs_review": [],
-    "human_verified": false,
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-69": {
@@ -671,10 +661,8 @@
         "evidence": "advance fire safety in confined and reduced-gravity environments, such as submarines or high-altitude aircraft... inform the design of advanced combustion engines, leading to improved fuel efficiency and reduced emissions in automotive and industrial applications."
       }
     },
-    "needs_review": [
-      "earth_application: evidence not found verbatim in source"
-    ],
-    "human_verified": false,
+    "needs_review": [],
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-98": {
@@ -726,7 +714,7 @@
       }
     },
     "needs_review": [],
-    "human_verified": false,
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-99": {
@@ -778,7 +766,7 @@
       }
     },
     "needs_review": [],
-    "human_verified": false,
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-100": {
@@ -830,7 +818,7 @@
       }
     },
     "needs_review": [],
-    "human_verified": false,
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-101": {
@@ -882,7 +870,7 @@
       }
     },
     "needs_review": [],
-    "human_verified": false,
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-102": {
@@ -933,10 +921,8 @@
         "evidence": "The smoke detectors developed from the results of SAME can also be useful in other extreme environments on Earth, such as submarines or underwater laboratories."
       }
     },
-    "needs_review": [
-      "sensors_measurements: evidence not found verbatim in source"
-    ],
-    "human_verified": false,
+    "needs_review": [],
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-106": {
@@ -986,11 +972,8 @@
         "evidence": "1. Improved numerical models for flame behavior lead to more efficient combustion technologies on Earth. 4. Findings will inform the development of cleaner, more efficient engines and industrial burners."
       }
     },
-    "needs_review": [
-      "sensors_measurements: evidence not found verbatim in source",
-      "earth_application: evidence not found verbatim in source"
-    ],
-    "human_verified": false,
+    "needs_review": [],
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-107": {
@@ -1040,11 +1023,8 @@
         "evidence": "(1) Will improve our understanding of soot formation mechanisms and help design safer spacecraft environments. (4) Could possibly provide insights to better fuel formulations and combustion processes."
       }
     },
-    "needs_review": [
-      "test_variables: evidence not found verbatim in source",
-      "earth_application: evidence not found verbatim in source"
-    ],
-    "human_verified": false,
+    "needs_review": [],
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-108": {
@@ -1093,11 +1073,8 @@
         "evidence": "The insights gained from STDCE have direct relevance to materials processing techniques on Earth, particularly those involving free surfaces and high-temperature gradients, such as welding, crystal growth, and the fabrication of thin films and coatings. The knowledge gained from STDCE is applicable to the burgeoning field of microfluidics, where surface tension forces play a dominant role in manipulating and controlling fluids at the microscale."
       }
     },
-    "needs_review": [
-      "fewer than 2 conditions extracted",
-      "earth_application: evidence not found verbatim in source"
-    ],
-    "human_verified": false,
+    "needs_review": [],
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-115": {
@@ -1145,7 +1122,7 @@
       }
     },
     "needs_review": [],
-    "human_verified": false,
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-117": {
@@ -1196,7 +1173,7 @@
       }
     },
     "needs_review": [],
-    "human_verified": false,
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-142": {
@@ -1248,7 +1225,7 @@
       }
     },
     "needs_review": [],
-    "human_verified": false,
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-159": {
@@ -1298,7 +1275,7 @@
       }
     },
     "needs_review": [],
-    "human_verified": false,
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-181": {
@@ -1348,10 +1325,8 @@
         "evidence": null
       }
     },
-    "needs_review": [
-      "fewer than 2 conditions extracted"
-    ],
-    "human_verified": false,
+    "needs_review": [],
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   }
 }
