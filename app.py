@@ -1,11 +1,15 @@
+import base64
 import json
 import os
 import time
+from io import BytesIO
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 from dotenv import load_dotenv
 from google import genai
+from PIL import Image, ImageDraw, ImageFilter
+import numpy as np
 
 # --- PAGE CONFIG ---
 st.set_page_config(
@@ -26,6 +30,130 @@ def get_gemini_client(api_key: str):
     return genai.Client(api_key=api_key)
 
 client = get_gemini_client(API_KEY)
+
+# --- IMAGE HELPER: true-alpha black keying, opacity, radial feathering ---
+@st.cache_data(show_spinner=False)
+def _process_image_b64(
+    image_path: str,
+    mtime: float,  # part of the cache key so edited image files are picked up
+    key_black: bool,
+    opacity: float,
+    vignette: bool,
+    max_width: int,
+) -> str:
+    img = Image.open(image_path).convert("RGBA")
+
+    # Downscale first: keeps the base64 payload (re-sent on every rerun) small and processing fast
+    if max_width and img.width > max_width:
+        new_h = int(img.height * max_width / img.width)
+        img = img.resize((max_width, new_h), Image.LANCZOS)
+    w, h = img.size
+
+    arr = np.asarray(img).astype(np.float32)
+    alpha = arr[..., 3]
+    if key_black:
+        # Dark/black pixels -> transparent, soft ramp between luminance 18 and 55
+        lum = arr[..., :3].max(axis=2)
+        ramp = np.clip((lum - 18.0) / 37.0, 0.0, 1.0)
+        alpha = alpha * ramp
+    alpha = alpha * float(opacity)
+    img = Image.fromarray(np.dstack([arr[..., :3], alpha]).astype(np.uint8), "RGBA")
+
+    if vignette:
+        # Soft radial edge fade so rectangular images melt into the dark UI
+        mask = Image.new("L", (w, h), 0)
+        draw = ImageDraw.Draw(mask)
+        mx, my = int(w * 0.08), int(h * 0.08)
+        draw.ellipse((mx, my, w - mx, h - my), fill=255)
+        mask = mask.filter(ImageFilter.GaussianBlur(radius=max(1, int(min(w, h) * 0.12))))
+        r, g, b, a = img.split()
+        a = Image.composite(a, Image.new("L", (w, h), 0), mask)
+        img = Image.merge("RGBA", (r, g, b, a))
+
+    buf = BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+def get_processed_image_b64(
+    image_path: str,
+    key_black: bool = False,
+    opacity: float = 1.0,
+    vignette: bool = False,
+    max_width: int = 900,
+) -> str:
+    """Return a base64 PNG string, or "" if the image is missing or cannot be processed."""
+    if not os.path.exists(image_path):
+        return ""
+    try:
+        return _process_image_b64(
+            image_path, os.path.getmtime(image_path), key_black, opacity, vignette, max_width
+        )
+    except Exception:
+        return ""
+
+
+def render_image(b64: str, style: str = "width:100%;", alt: str = "") -> None:
+    """Render a base64 PNG inline. Silently does nothing if the asset is missing."""
+    if b64:
+        st.markdown(
+            f'<img src="data:image/png;base64,{b64}" alt="{alt}" style="{style}" />',
+            unsafe_allow_html=True,
+        )
+
+
+# --- COSMIC OBSIDIAN THEME (+ optional 16% opacity background watermark) ---
+bg_b64 = get_processed_image_b64("assets/cosmic_banner.png", opacity=0.16, max_width=1600)
+bg_css = (
+    f'background-image: linear-gradient(180deg, rgba(8,6,5,0.82) 0%, rgba(16,8,4,0.88) 100%), url("data:image/png;base64,{bg_b64}");'
+    if bg_b64
+    else "background: radial-gradient(circle at 80% 10%, #260f04 0%, #090605 50%, #040406 100%);"
+)
+
+st.markdown(
+    f"""
+    <style>
+    [data-testid="stAppViewContainer"] {{
+        {bg_css}
+        background-size: cover;
+        background-attachment: fixed;
+        background-position: center;
+        color: #f5f5f7;
+    }}
+    [data-testid="stHeader"] {{
+        background-color: rgba(0, 0, 0, 0);
+    }}
+    [data-testid="stSidebar"] {{
+        background: linear-gradient(180deg, #0e0805 0%, #170b05 100%) !important;
+        border-right: 1px solid rgba(223, 90, 21, 0.45);
+    }}
+    /* Recolor red multiselect tags to Cosmic Amber */
+    span[data-baseweb="tag"] {{
+        background-color: #c84b11 !important;
+        border: 1px solid #ff7a2f !important;
+    }}
+    [data-testid="stMetric"] {{
+        background: rgba(20, 11, 6, 0.72);
+        border: 1px solid rgba(223, 90, 21, 0.4);
+        padding: 12px 16px;
+        border-radius: 10px;
+    }}
+    [data-testid="stMetricValue"] {{
+        color: #ff752b !important;
+    }}
+    button[data-baseweb="tab"][aria-selected="true"] {{
+        color: #ff752b !important;
+        border-bottom-color: #ff752b !important;
+    }}
+    .stButton > button[kind="primary"], .stDownloadButton > button {{
+        background: linear-gradient(90deg, #df5a15 0%, #ff7a2f 100%) !important;
+        border: none !important;
+        color: #ffffff !important;
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # --- LOAD & NORMALIZE PSI DATASET + VERIFIED EVIDENCE LAYER ---
 @st.cache_data
@@ -176,6 +304,8 @@ except Exception as e:
 
 # --- SIDEBAR CONTROLS ---
 with st.sidebar:
+    flame_b64 = get_processed_image_b64("assets/flame_emblem.png", key_black=True, opacity=0.95, max_width=400)
+    render_image(flame_b64, "width:135px; mix-blend-mode:screen; display:block; margin:0 auto -10px auto;", "TAARA flame emblem")
     st.title("🔥 Team TAARA")
     st.caption("NASA Space Apps Challenge | Flame in Freefall")
     st.divider()
@@ -226,10 +356,15 @@ if selected_pillars:
     filtered_df = filtered_df[filtered_df["pillar"].isin(selected_pillars)]
 
 # --- HEADER & KPI METRICS ---
-st.title("🔥 Flame in Freefall: Microgravity Combustion Intelligence Dashboard")
-st.markdown(
-    f"**Active Mission Profile:** `{target_env}` — Bounding partial-gravity fire safety using audited NASA PSI $0g$ flight & $1g$ ground datasets."
-)
+hero_left, hero_right = st.columns([2.3, 1])
+with hero_left:
+    st.title("🔥 Flame in Freefall: Microgravity Combustion Intelligence Dashboard")
+    st.markdown(
+        f"**Active Mission Profile:** `{target_env}` — Bounding partial-gravity fire safety using audited NASA PSI $0g$ flight & $1g$ ground datasets."
+    )
+with hero_right:
+    astro_b64 = get_processed_image_b64("assets/astronaut_fire.png", opacity=0.88, vignette=True)
+    render_image(astro_b64, "width:100%; border-radius:14px;", "Astronaut observing a microgravity flame")
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Filtered Investigations", len(filtered_df), f"of {len(df)} audited PSI records")
@@ -270,6 +405,9 @@ with tab1:
             height=540,
         )
         fig_bar.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
             margin=dict(l=10, r=10, t=20, b=10),
             yaxis={"categoryorder": "total ascending"},
         )
@@ -286,7 +424,12 @@ with tab1:
             hover_data=["acronym", "name"],
             height=540,
         )
-        fig_sun.update_layout(margin=dict(l=10, r=10, t=20, b=10))
+        fig_sun.update_layout(
+            template="plotly_dark",
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            margin=dict(l=10, r=10, t=20, b=10),
+        )
         st.plotly_chart(fig_sun, use_container_width=True)
 
     header_col, btn_col = st.columns([3, 1])
@@ -311,10 +454,15 @@ with tab1:
 
 # === TAB 2: AI FIRE-SAFETY SYNTHESIZER ===
 with tab2:
-    st.subheader("🤖 Gemini-Powered Partial-Gravity Extrapolation Engine")
-    st.markdown(
-        "Select one or more PSI investigations to synthesize how $0g$ ISS findings and $1g$ ground models bound fire detection, material screening, and suppression for **Moon ($1/6g$)** and **Mars ($3/8g$)** habitats — backed by verbatim NASA evidence quotes."
-    )
+    t2_left, t2_right = st.columns([3, 1])
+    with t2_left:
+        st.subheader("🤖 Gemini-Powered Partial-Gravity Extrapolation Engine")
+        st.markdown(
+            "Select one or more PSI investigations to synthesize how $0g$ ISS findings and $1g$ ground models bound fire detection, material screening, and suppression for **Moon ($1/6g$)** and **Mars ($3/8g$)** habitats — backed by verbatim NASA evidence quotes."
+        )
+    with t2_right:
+        astro_tab2 = get_processed_image_b64("assets/astronaut_fire.png", opacity=0.82, vignette=True, max_width=600)
+        render_image(astro_tab2, "width:100%;", "Astronaut observing a microgravity flame")
 
     default_top4 = filtered_df.sort_values(["readiness_score", "pub_count"], ascending=[False, False])["psi_id"].head(4).tolist()
 
@@ -523,10 +671,22 @@ with tab3:
 
 # === TAB 4: FLIGHT-TO-GROUND LINEAGE ===
 with tab4:
-    st.subheader("🔗 Flight-to-Ground Study Lineage & Cross-Domain Controls")
-    st.markdown(
-        "Shows how ISS/Cygnus primary flight experiments connect to follow-on ground CFD/modeling investigations in your dataset, plus `out_of_scope` non-combustion control records."
-    )
+    t4_left, t4_right = st.columns([3.2, 1])
+    with t4_left:
+        st.subheader("🔗 Flight-to-Ground Study Lineage & Cross-Domain Controls")
+        st.markdown(
+            "Shows how ISS/Cygnus primary flight experiments connect to follow-on ground CFD/modeling investigations in your dataset, plus `out_of_scope` non-combustion control records (`PSI-108`, `PSI-181`)."
+        )
+    with t4_right:
+        unicorn_b64 = get_processed_image_b64("assets/shadow_unicorn.png", key_black=True, opacity=0.72, vignette=True, max_width=500)
+        if unicorn_b64:
+            st.markdown(
+                f'<div style="text-align:center;">'
+                f'<img src="data:image/png;base64,{unicorn_b64}" alt="Cross-domain anomaly silhouette" style="width:155px;" />'
+                f'<div style="font-size:0.75rem; color:#c88a65;">Cross-Domain Anomaly Controls</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
     lineage_rows = []
     for pid, rec in raw_dict.items():
@@ -542,4 +702,4 @@ with tab4:
                 "Linked Ground Studies": ", ".join(rec.get("related_ground_studies", [])) or "—",
             })
 
-    st.dataframe(pd.DataFrame(lineage_rows), use_container_width=True, hide_index=True)
+    st.dataframe(pd.DataFrame(lineage_rows), use_container_width=True, hide_index=True)
