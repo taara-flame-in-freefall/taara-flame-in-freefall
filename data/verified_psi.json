@@ -47,7 +47,7 @@
       }
     },
     "needs_review": [],
-    "human_verified": false,
+    "human_verified": true,
     "model": "gemini-3.8-flash"
   },
   "PSI-20": {
@@ -98,7 +98,7 @@
       }
     },
     "needs_review": [],
-    "human_verified": false,
+    "human_verified": true,
     "model": "gemini-3.8-flash"
   },
   "PSI-21": {
@@ -148,7 +148,7 @@
       }
     },
     "needs_review": [],
-    "human_verified": false,
+    "human_verified": true,
     "model": "gemini-3.5-flash-lite"
   },
   "PSI-22": {

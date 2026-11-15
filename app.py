@@ -27,14 +27,25 @@ def get_gemini_client(api_key: str):
 
 client = get_gemini_client(API_KEY)
 
-# --- LOAD & NORMALIZE PSI DATASET ---
+# --- LOAD & NORMALIZE PSI DATASET + VERIFIED EVIDENCE LAYER ---
 @st.cache_data
-def load_psi_data(filepath: str = "psi_data.json"):
-    with open(filepath, "r", encoding="utf-8") as f:
+def load_psi_data(
+    raw_filepath: str = "psi_data.json",
+    verified_filepath: str = os.path.join("data", "verified_psi.json"),
+):
+    with open(raw_filepath, "r", encoding="utf-8") as f:
         raw = json.load(f)
+
+    verified = {}
+    if os.path.exists(verified_filepath):
+        with open(verified_filepath, "r", encoding="utf-8") as f:
+            verified = json.load(f)
 
     records = []
     for psi_key, item in raw.items():
+        v_rec = verified.get(psi_key, {})
+        cond = v_rec.get("conditions", {})
+
         pillar = item.get("pillar", "unknown")
         parent_id = item.get("parent_investigation")
         if pillar == "unknown" and parent_id and parent_id in raw:
@@ -42,9 +53,16 @@ def load_psi_data(filepath: str = "psi_data.json"):
         elif pillar == "unknown":
             pillar = f"Non-Combustion ({item.get('research_area', 'Other')})"
 
-        is_combustion = item.get("research_area") == "Combustion Science"
+        fire_fn = cond.get("fire_safety_function", "unknown")
+        is_combustion = (item.get("research_area") == "Combustion Science") and (fire_fn != "out_of_scope")
         is_primary = bool(item.get("is_primary", False))
         pub_count = len(item.get("publications", []))
+
+        def _val(field_name: str) -> str:
+            entry = cond.get(field_name)
+            if isinstance(entry, dict) and entry.get("value"):
+                return str(entry["value"])
+            return "Not specified"
 
         records.append({
             "psi_id": item.get("psi_id", psi_key),
@@ -52,6 +70,13 @@ def load_psi_data(filepath: str = "psi_data.json"):
             "name": item.get("name", ""),
             "pillar": pillar,
             "raw_pillar": item.get("pillar", "unknown"),
+            "fire_safety_function": fire_fn,
+            "environment_relevance": ", ".join(cond.get("environment_relevance", [])) or "—",
+            "human_verified": bool(v_rec.get("human_verified", False)),
+            "fuel_or_material": _val("fuel_type") if _val("fuel_type") != "Not specified" else _val("material_tested"),
+            "o2_concentration": _val("o2_concentration"),
+            "pressure": _val("pressure"),
+            "flow_speed": _val("flow_speed"),
             "is_primary": is_primary,
             "is_combustion": is_combustion,
             "project_type": item.get("project_type", "unknown"),
@@ -77,24 +102,31 @@ def load_psi_data(filepath: str = "psi_data.json"):
     df = pd.DataFrame(records)
     df["psi_num"] = df["psi_id"].str.replace("PSI-", "", regex=False).astype(int)
     df = df.sort_values("psi_num").reset_index(drop=True)
-    return df, raw
+    return df, raw, verified
 
 def calculate_mission_score(row: pd.Series, env_profile: str) -> float:
     """Dynamically computes Fire-Safety Relevance Score (0-100) tailored to mission gravity & atmosphere."""
-    if not row["is_combustion"]:
+    if not row["is_combustion"] or row["fire_safety_function"] == "out_of_scope":
         return 12.0  # Non-combustion control baseline (e.g., PSI-108, PSI-181)
 
-    text_blob = f"{row['name']} {row['objective']} {row['hypothesis']} {row['research_impacts']} {row['sub_research_area']}".lower()
+    text_blob = (
+        f"{row['name']} {row['objective']} {row['hypothesis']} {row['research_impacts']} "
+        f"{row['sub_research_area']} {row['o2_concentration']} {row['pressure']} {row['fuel_or_material']}"
+    ).lower()
     pillar = row["pillar"].lower()
 
     score = 32.0
     if row["is_primary"]:
         score += 16.0
+    if row["human_verified"]:
+        score += 2.0
     score += min(row["pub_count"] * 0.45, 14.0)
 
     if "Lunar" in env_profile:
+        if "lunar_base" in row["environment_relevance"]:
+            score += 4.0
         if "solids" in pillar:
-            score += 22.0
+            score += 20.0
         elif "detection" in pillar:
             score += 14.0
         elif "gas flames" in pillar:
@@ -102,9 +134,9 @@ def calculate_mission_score(row: pd.Series, env_profile: str) -> float:
         elif "droplets" in pillar:
             score += 10.0
 
-        for kw in ["oxygen", "flammability", "pmma", "sibal", "saffire", "bass", "test 1", "test 2", "cone calorimeter"]:
+        for kw in ["oxygen", "30%", "34%", "10.2", "8.2", "flammability", "pmma", "sibal", "saffire", "bass"]:
             if kw in text_blob:
-                score += 2.5
+                score += 2.2
 
     elif "Martian" in env_profile:
         if "solids" in pillar:
@@ -137,9 +169,9 @@ def calculate_mission_score(row: pd.Series, env_profile: str) -> float:
     return round(min(score, 100.0), 1)
 
 try:
-    df, raw_dict = load_psi_data()
+    df, raw_dict, verified_dict = load_psi_data()
 except Exception as e:
-    st.error(f"Could not load `psi_data.json`: {e}")
+    st.error(f"Could not load PSI dataset files (`psi_data.json` / `data/verified_psi.json`): {e}")
     st.stop()
 
 # --- SIDEBAR CONTROLS ---
@@ -158,9 +190,9 @@ with st.sidebar:
     )
 
     include_non_combustion = st.checkbox(
-        "Include Non-Combustion Controls (PSI-108, PSI-181)",
+        "Include Out-of-Scope Controls (PSI-108, PSI-181)",
         value=False,
-        help="Shows Fluid Physics & Materials Science records from the PSI archive as negative/cross-domain controls.",
+        help="Shows Fluid Physics (PSI-108) & Materials Science/Soldering (PSI-181) records flagged as out_of_scope in verified_psi.json.",
     )
 
     study_filter = st.radio(
@@ -176,6 +208,8 @@ with st.sidebar:
     )
 
     st.divider()
+    verified_count = int(df["human_verified"].sum())
+    st.markdown(f"**Dataset Audit:** ✅ `{verified_count}/{len(df)}` Human-Verified")
     st.markdown("**API Status:** " + ("🟢 Gemini Connected" if client else "🔴 Missing `GEMINI_API_KEY` in `.env`"))
 
 # --- COMPUTE DYNAMIC SCORES & APPLY FILTERS ---
@@ -194,11 +228,11 @@ if selected_pillars:
 # --- HEADER & KPI METRICS ---
 st.title("🔥 Flame in Freefall: Microgravity Combustion Intelligence Dashboard")
 st.markdown(
-    f"**Active Mission Profile:** `{target_env}` — Bounding partial-gravity fire safety using NASA PSI $0g$ flight & $1g$ ground datasets."
+    f"**Active Mission Profile:** `{target_env}` — Bounding partial-gravity fire safety using audited NASA PSI $0g$ flight & $1g$ ground datasets."
 )
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Filtered Investigations", len(filtered_df), f"of {len(df)} total PSI records")
+col1.metric("Filtered Investigations", len(filtered_df), f"of {len(df)} audited PSI records")
 col2.metric("Primary Flight Studies", int(filtered_df["is_primary"].sum()))
 col3.metric("Peer-Reviewed Papers", int(filtered_df["pub_count"].sum()))
 top_row = filtered_df.sort_values(["readiness_score", "pub_count"], ascending=[False, False]).iloc[0] if not filtered_df.empty else None
@@ -214,7 +248,7 @@ st.divider()
 tab1, tab2, tab3, tab4 = st.tabs([
     "📊 Mission Ranking & Analytics",
     "🤖 AI Fire-Safety Synthesizer",
-    "🔬 Investigation Deep-Dive",
+    "🔬 Investigation Deep-Dive & Evidence",
     "🔗 Flight-to-Ground Lineage",
 ])
 
@@ -231,7 +265,7 @@ with tab1:
             y="psi_id",
             color="pillar",
             orientation="h",
-            hover_data=["acronym", "name", "pub_count", "project_type"],
+            hover_data=["acronym", "name", "fire_safety_function", "o2_concentration", "pressure", "pub_count"],
             labels={"readiness_score": "Mission Fire-Safety Score (0–100)", "psi_id": "PSI ID"},
             height=540,
         )
@@ -257,11 +291,12 @@ with tab1:
 
     header_col, btn_col = st.columns([3, 1])
     with header_col:
-        st.subheader("Ranked PSI Investigation Matrix")
+        st.subheader("Ranked PSI Investigation Matrix (with Audited Test Regimes)")
     with btn_col:
         export_cols = [
-            "psi_id", "acronym", "name", "pillar", "project_type",
-            "flight_platform", "pub_count", "readiness_score", "parent_investigation"
+            "psi_id", "acronym", "name", "pillar", "fire_safety_function",
+            "fuel_or_material", "o2_concentration", "pressure", "flow_speed",
+            "pub_count", "readiness_score", "parent_investigation"
         ]
         ranked_table = filtered_df.sort_values(["readiness_score", "pub_count"], ascending=[False, False])[export_cols]
         st.download_button(
@@ -278,7 +313,7 @@ with tab1:
 with tab2:
     st.subheader("🤖 Gemini-Powered Partial-Gravity Extrapolation Engine")
     st.markdown(
-        "Select one or more PSI investigations to synthesize how $0g$ ISS findings and $1g$ ground models bound fire detection, material screening, and suppression for **Moon ($1/6g$)** and **Mars ($3/8g$)** habitats."
+        "Select one or more PSI investigations to synthesize how $0g$ ISS findings and $1g$ ground models bound fire detection, material screening, and suppression for **Moon ($1/6g$)** and **Mars ($3/8g$)** habitats — backed by verbatim NASA evidence quotes."
     )
 
     default_top4 = filtered_df.sort_values(["readiness_score", "pub_count"], ascending=[False, False])["psi_id"].head(4).tolist()
@@ -298,7 +333,7 @@ with tab2:
                 "Bound Moon (1/6 g) & Mars (3/8 g) Habitat Fire Safety Using 0g & 1g Data",
                 "Compare Material Flammability Screening (NASA-STD-6001 1g vs Microgravity)",
                 "Design Smoke Detection & Suppression Protocol for Low-Gravity Habitats",
-                "Identify Non-Combustion / Out-of-Scope Control Records in Dataset",
+                "Audit Out-of-Scope & Unspecified Experimental Parameters Across Selected Records",
             ],
         )
     with col_mode:
@@ -320,6 +355,7 @@ with tab2:
             context_payload = []
             for pid in selected_ids:
                 rec = raw_dict[pid]
+                v_rec = verified_dict.get(pid, {})
                 score_val = df.loc[df["psi_id"] == pid, "readiness_score"].values[0]
                 context_payload.append({
                     "psi_id": pid,
@@ -329,6 +365,8 @@ with tab2:
                     "research_area": rec.get("research_area"),
                     "pillar": rec.get("pillar"),
                     "project_type": rec.get("project_type"),
+                    "human_verified": v_rec.get("human_verified", False),
+                    "audited_conditions_with_evidence": v_rec.get("conditions", {}),
                     "objective": rec.get("objective"),
                     "approach": rec.get("approach"),
                     "hypothesis": rec.get("hypothesis"),
@@ -350,20 +388,20 @@ Target Mission Profile: {target_env}
 Analysis Goal: {analysis_goal}
 Response Style: {depth_instruction}
 
-CRITICAL GROUNDING RULES:
+CRITICAL GROUNDING & SCIENTIFIC INTEGRITY RULES:
 - Cite the exact PSI ID (e.g., [PSI-26]) for every experimental claim.
-- Use ONLY experimental parameters, materials, and metrics explicitly stated in the supplied PSI records below.
-- Do NOT invent specific test numbers (such as flow speeds or concentrations) not present in the JSON; state "not specified in PSI metadata" where quantitative values are absent.
+- Use ONLY experimental parameters, materials, concentrations, pressures, and metrics explicitly present in `audited_conditions_with_evidence` or the NASA metadata below.
+- Where a field in `audited_conditions_with_evidence` has `"value": null`, explicitly state "not specified in PSI archive" — NEVER invent or extrapolate missing test parameters.
 - Remember that NASA PSI contains 0g flight and 1g ground/modeling datasets—frame Moon (1/6g) and Mars (3/8g) conclusions as engineering bounds/extrapolations rather than direct partial-gravity flight measurements.
 
-Supplied NASA PSI Investigations:
+Supplied Audited NASA PSI Investigations:
 {json.dumps(context_payload, indent=2)}
 
 Provide a structured, rigorous engineering assessment with:
 1. **Executive Risk Verdict** (Rank the selected studies by criticality for {target_env} with PSI citations).
-2. **Physics Translation ($1g \\rightarrow 0g$ Bounding $1/6g$ & $3/8g$)**: Explain how buoyant convection suppression, radiative extinction, limiting oxygen index (LOI), soot/aerosol aggregation, or cool-flame regimes shift across gravity regimes based on the cited studies.
+2. **Physics Translation ($1g \\rightarrow 0g$ Bounding $1/6g$ & $3/8g$)**: Explain how buoyant convection suppression, radiative extinction, limiting oxygen index (LOI), soot/aerosol aggregation, or cool-flame regimes shift across gravity regimes based on the cited studies and their audited test conditions.
 3. **Actionable Habitat Engineering Controls**: Specific recommendations for material selection, ventilation management, smoke detectors, or suppressants grounded in the supplied studies.
-4. **Data Anomalies & Scope Caveats**: Explicitly flag any non-combustion records (such as PSI-108 Fluid Physics or PSI-181 Soldering/Materials Science) or missing metadata fields.
+4. **Data Anomalies & Scope Caveats**: Explicitly flag any `out_of_scope` non-combustion controls (`PSI-108` Fluid Physics, `PSI-181` Soldering/Materials Science) or null test conditions.
 """
             if is_deep:
                 models_to_try = [
@@ -410,29 +448,58 @@ Provide a structured, rigorous engineering assessment with:
                         continue
 
                 if response_text:
-                    st.caption(f"Mode: **{ai_speed_mode}** | Engine: `{active_model}` • Grounded strictly in selected NASA PSI metadata")
+                    st.caption(f"Mode: **{ai_speed_mode}** | Engine: `{active_model}` • Grounded strictly in human-verified NASA PSI evidence")
                     st.markdown(response_text)
                 else:
                     st.error(f"Gemini API temporarily busy across all rotated models: {last_err}")
 
-# === TAB 3: INVESTIGATION DEEP-DIVE ===
+# === TAB 3: INVESTIGATION DEEP-DIVE & VERIFIED EVIDENCE ===
 with tab3:
-    st.subheader("🔬 Investigation Explorer & Literature Index")
+    st.subheader("🔬 Investigation Explorer & Audited Evidence Trail")
     chosen_id = st.selectbox(
         "Inspect Investigation",
         options=df["psi_id"].tolist(),
         format_func=lambda x: f"{x} — {raw_dict[x].get('name', '')}",
     )
     item = raw_dict[chosen_id]
+    v_item = verified_dict.get(chosen_id, {})
+    v_cond = v_item.get("conditions", {})
 
     m1, m2, m3, m4 = st.columns(4)
     m1.info(f"**Acronym:** {item.get('acronym', 'unknown')}")
     m2.info(f"**Pillar:** {item.get('pillar', 'unknown')}")
-    m3.info(f"**Type:** {item.get('project_type', 'unknown')}")
-    m4.info(f"**Platform:** {item.get('flight_platform', 'unknown')}")
+    m3.info(f"**Function:** `{v_cond.get('fire_safety_function', 'unknown')}`")
+    m4.info(f"**Audit Status:** {'✅ Human-Verified' if v_item.get('human_verified') else '⏳ Pending'}")
 
     st.markdown(f"### {item.get('name')}")
-    st.caption(f"DOI: `{item.get('doi')}` | Managing Center: {item.get('managing_center')} | Dates: {item.get('start_date')} to {item.get('end_date')}")
+    st.caption(
+        f"DOI: `{item.get('doi')}` | Platform: `{item.get('flight_platform')}` | "
+        f"Managing Center: {item.get('managing_center')} | Dates: {item.get('start_date')} to {item.get('end_date')}"
+    )
+
+    st.markdown("#### ✅ Audited Experimental Conditions & Verbatim NASA Source Quotes")
+    param_fields = [
+        ("Fuel Type", "fuel_type"),
+        ("Material Tested", "material_tested"),
+        ("O₂ Concentration", "o2_concentration"),
+        ("Ambient Pressure", "pressure"),
+        ("Flow / Ventilation Speed", "flow_speed"),
+        ("Sample Geometry / Size", "sample_geometry_size"),
+        ("Diluents / Suppressants", "diluents_suppressants"),
+        ("Sensors & Diagnostics", "sensors_measurements"),
+        ("Test Variables", "test_variables"),
+    ]
+    evidence_rows = []
+    for label, key in param_fields:
+        entry = v_cond.get(key, {})
+        val = entry.get("value") if isinstance(entry, dict) else None
+        ev = entry.get("evidence") if isinstance(entry, dict) else None
+        evidence_rows.append({
+            "Experimental Parameter": label,
+            "Verified Value": val if val is not None else "null (Not stated in PSI record)",
+            "Verbatim NASA PSI Source Quote": ev if ev is not None else "—",
+        })
+    st.dataframe(pd.DataFrame(evidence_rows), use_container_width=True, hide_index=True)
 
     col_a, col_b = st.columns(2)
     with col_a:
@@ -458,18 +525,19 @@ with tab3:
 with tab4:
     st.subheader("🔗 Flight-to-Ground Study Lineage & Cross-Domain Controls")
     st.markdown(
-        "Shows how ISS/Cygnus primary flight experiments connect to follow-on ground CFD/modeling investigations in your dataset, plus non-combustion control records."
+        "Shows how ISS/Cygnus primary flight experiments connect to follow-on ground CFD/modeling investigations in your dataset, plus `out_of_scope` non-combustion control records."
     )
 
     lineage_rows = []
     for pid, rec in raw_dict.items():
-        if rec.get("parent_investigation") or rec.get("related_ground_studies") or rec.get("research_area") != "Combustion Science":
+        v_fn = verified_dict.get(pid, {}).get("conditions", {}).get("fire_safety_function", "unknown")
+        if rec.get("parent_investigation") or rec.get("related_ground_studies") or v_fn == "out_of_scope":
             lineage_rows.append({
                 "PSI ID": pid,
                 "Acronym": rec.get("acronym"),
                 "Name": rec.get("name"),
                 "Research Area": rec.get("research_area"),
-                "Project Type": rec.get("project_type"),
+                "Fire Safety Function": v_fn,
                 "Parent Flight Study": rec.get("parent_investigation") or "—",
                 "Linked Ground Studies": ", ".join(rec.get("related_ground_studies", [])) or "—",
             })
